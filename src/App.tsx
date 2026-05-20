@@ -10,14 +10,43 @@ import {
   Info,
 } from "lucide-react";
 
+import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+
 // Placeholder pages — will be built out in later steps
 function Dashboard() {
+  const [status, setStatus] = useState("Idle — Ready to dictate");
+  const [isRecording, setIsRecording] = useState(false);
+
+  const toggleRecording = async () => {
+    try {
+      if (isRecording) {
+        setStatus("Stopping...");
+        const data = await invoke<number[]>("stop_audio_capture");
+        setStatus(`Captured ${data.length} samples`);
+        setIsRecording(false);
+      } else {
+        setStatus("Starting...");
+        await invoke("start_audio_capture");
+        setStatus("Recording...");
+        setIsRecording(true);
+      }
+    } catch (err) {
+      setStatus(`Error: ${err}`);
+      setIsRecording(false);
+    }
+  };
+
   return (
     <div className="flex flex-col items-center justify-center h-full gap-6">
       <div className="flex items-center gap-3">
-        <div className="w-3 h-3 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
+        <div
+          className={`w-3 h-3 rounded-full ${
+            isRecording ? "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-pulse" : "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"
+          }`}
+        />
         <span className="text-muted-foreground text-sm font-medium tracking-wide uppercase">
-          Idle — Ready to dictate
+          {status}
         </span>
       </div>
       <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
@@ -30,6 +59,12 @@ function Dashboard() {
         </kbd>{" "}
         to start dictating anywhere.
       </p>
+      <button
+        onClick={toggleRecording}
+        className="mt-4 px-6 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+      >
+        {isRecording ? "Stop Audio Capture" : "Test Audio Capture"}
+      </button>
     </div>
   );
 }
