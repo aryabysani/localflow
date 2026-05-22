@@ -26,8 +26,8 @@
       {
         "label": "bubble",
         "title": "",
-        "width": 280,
-        "height": 80,
+        "width": 320,
+        "height": 88,
         "x": 800,
         "y": 900,
         "visible": false,
@@ -41,6 +41,10 @@
     ],
     "security": {
       "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.ico",
+      "iconAsTemplate": false
     }
   },
   "bundle": {

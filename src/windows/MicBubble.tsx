@@ -1,75 +1,95 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 /**
  * MicBubble — Floating overlay window shown during recording.
- * 280×80 px rounded pill with:
- *  - Live waveform bars (8 bars, animated with random amplitudes for now)
+ * 320×88 px rounded pill with:
+ *  - Live waveform bars (8 bars, wired to real audio amplitude via polling)
  *  - Timer (mm:ss)
- *  - "Release to send" hint text
+ *  - Recording status / processing status
  *
- * This component renders in the `bubble` Tauri window which is
- * transparent, always-on-top, undecorated, and skip-taskbar.
+ * Runs in the `bubble` Tauri window: transparent, always-on-top, undecorated, click-through.
  */
 export default function MicBubble() {
   const [elapsed, setElapsed] = useState(0);
-  const [bars, setBars] = useState<number[]>(Array(8).fill(0.3));
+  const [bars, setBars] = useState<number[]>(Array(8).fill(0.15));
+  const [status, setStatus] = useState<"recording" | "processing">("recording");
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const amplitudeRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Timer tick
   useEffect(() => {
-    const interval = setInterval(() => {
+    // Timer
+    timerRef.current = setInterval(() => {
       setElapsed((prev) => prev + 1);
     }, 1000);
-    return () => clearInterval(interval);
-  }, []);
 
-  // Simulated waveform animation (will be wired to real audio later)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setBars(
-        Array(8)
-          .fill(0)
-          .map(() => 0.15 + Math.random() * 0.85),
-      );
+    // Poll amplitude from Rust at 10fps
+    amplitudeRef.current = setInterval(async () => {
+      try {
+        const amp = await invoke<{ rms: number; bars: number[] }>("get_amplitude");
+        if (amp && amp.bars.length > 0) {
+          setBars(amp.bars);
+        } else {
+          // Animate randomly when no real data
+          setBars(Array(8).fill(0).map(() => 0.1 + Math.random() * 0.7));
+        }
+      } catch {
+        setBars(Array(8).fill(0).map(() => 0.1 + Math.random() * 0.5));
+      }
     }, 100);
-    return () => clearInterval(interval);
+
+    // Listen for state changes from backend
+    const unlistenRec = listen("recording-started", () => setStatus("recording"));
+    const unlistenProc = listen("processing-started", () => setStatus("processing"));
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (amplitudeRef.current) clearInterval(amplitudeRef.current);
+      unlistenRec.then((fn) => fn());
+      unlistenProc.then((fn) => fn());
+    };
   }, []);
 
-  const minutes = Math.floor(elapsed / 60)
-    .toString()
-    .padStart(2, "0");
+  const minutes = Math.floor(elapsed / 60).toString().padStart(2, "0");
   const seconds = (elapsed % 60).toString().padStart(2, "0");
 
   return (
     <div
       style={{
-        width: "280px",
-        height: "80px",
+        width: "320px",
+        height: "88px",
         display: "flex",
         alignItems: "center",
-        justifyContent: "center",
-        gap: "12px",
-        background: "rgba(10, 10, 10, 0.92)",
-        borderRadius: "40px",
-        border: "1px solid rgba(124, 58, 237, 0.3)",
-        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(124, 58, 237, 0.15)",
+        gap: "14px",
+        background: "rgba(8, 8, 8, 0.94)",
+        borderRadius: "44px",
+        border: "1px solid rgba(124, 58, 237, 0.35)",
+        boxShadow:
+          "0 12px 40px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(124, 58, 237, 0.2), inset 0 1px 0 rgba(255,255,255,0.04)",
         backdropFilter: "blur(20px)",
-        padding: "0 20px",
+        padding: "0 22px",
         fontFamily: "'Inter', sans-serif",
         overflow: "hidden",
         userSelect: "none",
-        // @ts-expect-error WebkitAppRegion is a non-standard CSS property for Tauri draggable windows
+        // Draggable region for Tauri
+        // @ts-expect-error non-standard prop
         WebkitAppRegion: "drag",
       }}
     >
-      {/* Recording indicator dot */}
+      {/* Status indicator */}
       <div
         style={{
-          width: "8px",
-          height: "8px",
+          width: "10px",
+          height: "10px",
           borderRadius: "50%",
-          backgroundColor: "#ef4444",
-          boxShadow: "0 0 8px rgba(239, 68, 68, 0.6)",
-          animation: "pulse 1.5s ease-in-out infinite",
+          backgroundColor: status === "recording" ? "#ef4444" : "#f59e0b",
+          boxShadow:
+            status === "recording"
+              ? "0 0 10px rgba(239, 68, 68, 0.7)"
+              : "0 0 10px rgba(245, 158, 11, 0.7)",
+          animation: "pulse 1.2s ease-in-out infinite",
+          flexShrink: 0,
         }}
       />
 
@@ -79,54 +99,62 @@ export default function MicBubble() {
           display: "flex",
           alignItems: "center",
           gap: "3px",
-          height: "36px",
+          height: "40px",
+          flex: 1,
         }}
       >
-        {bars.map((amplitude, i) => (
-          <div
-            key={i}
-            style={{
-              width: "3px",
-              height: `${amplitude * 36}px`,
-              backgroundColor: "#7c3aed",
-              borderRadius: "2px",
-              transition: "height 80ms ease-out",
-              opacity: 0.7 + amplitude * 0.3,
-            }}
-          />
-        ))}
+        {bars.map((amplitude, i) => {
+          // Center bars taller, outer bars shorter
+          const centerBias = 1 - Math.abs(i - 3.5) / 4;
+          const h = Math.max(4, amplitude * 40 * (0.5 + centerBias * 0.5));
+          return (
+            <div
+              key={i}
+              style={{
+                flex: 1,
+                height: `${h}px`,
+                background: `linear-gradient(180deg, #a78bfa, #7c3aed)`,
+                borderRadius: "2px",
+                transition: "height 80ms ease-out",
+                opacity: 0.6 + amplitude * 0.4,
+              }}
+            />
+          );
+        })}
       </div>
 
       {/* Timer */}
       <span
         style={{
           color: "#fafafa",
-          fontSize: "14px",
+          fontSize: "15px",
           fontVariantNumeric: "tabular-nums",
-          fontWeight: 500,
+          fontWeight: 600,
           letterSpacing: "0.02em",
-          minWidth: "42px",
+          minWidth: "46px",
+          flexShrink: 0,
         }}
       >
         {minutes}:{seconds}
       </span>
 
-      {/* Hint text */}
+      {/* Hint */}
       <span
         style={{
-          color: "#a1a1aa",
+          color: "#52525b",
           fontSize: "11px",
           fontWeight: 400,
           whiteSpace: "nowrap",
+          flexShrink: 0,
         }}
       >
-        Release to send
+        {status === "processing" ? "Processing…" : "Release key"}
       </span>
 
       <style>{`
         @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.5; transform: scale(0.85); }
         }
       `}</style>
     </div>
