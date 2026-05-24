@@ -63,6 +63,15 @@ pub fn available_models() -> Vec<ModelInfo> {
             ram_mb: 1800,
             description: "Best multilingual + Hinglish support. Recommended for non-English.".into(),
         },
+        ModelInfo {
+            id: "distil-large-v3".into(),
+            name: "Distil-Whisper Large V3".into(),
+            filename: "ggml-distil-large-v3.bin".into(),
+            url: "https://huggingface.co/distil-whisper/distil-large-v3-ggml/resolve/main/ggml-distil-large-v3.bin".into(),
+            size_mb: 756,
+            ram_mb: 1000,
+            description: "Distilled Large V3. 2x faster than standard Large with near-identical English accuracy.".into(),
+        },
     ]
 }
 
