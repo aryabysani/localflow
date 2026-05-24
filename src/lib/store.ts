@@ -53,16 +53,7 @@ export const useAppStore = create<AppState>((set) => ({
   stopRecording: async () => {
     try {
       set({ isProcessing: true, isRecording: false });
-      const result = await invoke<{
-        raw: string;
-        cleaned: string;
-        word_count: number;
-        app_name: string;
-      }>("stop_and_transcribe_cmd");
-      set({
-        isProcessing: false,
-        lastTranscript: { raw: result.raw, cleaned: result.cleaned },
-      });
+      await invoke("stop_and_transcribe_cmd");
     } catch (e) {
       console.error("Stop recording failed:", e);
       set({ isProcessing: false });

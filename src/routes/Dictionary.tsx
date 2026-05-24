@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { getDictionary, addDictionaryEntry, deleteDictionaryEntry, DictionaryEntry } from "../lib/ipc";
-import { Plus, Trash2, BookOpen } from "lucide-react";
+import { BookOpen, Plus, Trash2 } from "lucide-react";
+import { addDictionaryEntry, deleteDictionaryEntry, DictionaryEntry, getDictionary } from "../lib/ipc";
 
 export default function DictionaryPage() {
   const [entries, setEntries] = useState<DictionaryEntry[]>([]);
@@ -10,13 +10,10 @@ export default function DictionaryPage() {
   const [adding, setAdding] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
-  const load = async () => {
-    const data = await getDictionary();
-    setEntries(data);
-  };
+  const load = async () => setEntries(await getDictionary());
 
   useEffect(() => {
-    load();
+    load().catch(console.error);
   }, []);
 
   const handleAdd = async () => {
@@ -29,8 +26,6 @@ export default function DictionaryPage() {
       setReplacement("");
       setShowForm(false);
       await load();
-    } catch (e) {
-      console.error(e);
     } finally {
       setAdding(false);
     }
@@ -38,227 +33,85 @@ export default function DictionaryPage() {
 
   const handleDelete = async (id: number) => {
     await deleteDictionaryEntry(id);
-    setEntries((prev) => prev.filter((e) => e.id !== id));
-  };
-
-  const inputStyle = {
-    background: "#111",
-    border: "1px solid #1f1f1f",
-    borderRadius: "8px",
-    padding: "10px 14px",
-    fontSize: "14px",
-    color: "#fafafa",
-    outline: "none",
-    flex: 1,
+    setEntries((prev) => prev.filter((entry) => entry.id !== id));
   };
 
   return (
-    <div style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "24px" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+    <div className="page">
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#fafafa", margin: 0 }}>Dictionary</h1>
-          <p style={{ fontSize: "13px", color: "#71717a", margin: "4px 0 0" }}>
-            Add proper nouns, brand names, and acronyms to improve transcription accuracy.
-          </p>
+          <p className="page-kicker">{entries.length} vocabulary hints</p>
+          <h2 className="page-title">Dictionary</h2>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            background: "#7c3aed",
-            border: "none",
-            borderRadius: "8px",
-            padding: "10px 16px",
-            fontSize: "13px",
-            color: "#fff",
-            cursor: "pointer",
-          }}
-        >
-          <Plus size={16} />
-          Add Term
+        <button className="button primary" onClick={() => setShowForm((v) => !v)}>
+          <Plus size={14} />
+          Add term
         </button>
       </div>
 
-      {/* Info card */}
-      <div
-        style={{
-          background: "#0f0f1a",
-          border: "1px solid #2a2a4a",
-          borderRadius: "10px",
-          padding: "16px 20px",
-          display: "flex",
-          gap: "12px",
-          alignItems: "flex-start",
-        }}
-      >
-        <BookOpen size={16} style={{ color: "#7c3aed", flexShrink: 0, marginTop: "2px" }} />
-        <div style={{ fontSize: "13px", color: "#a1a1aa", lineHeight: 1.6 }}>
-          Terms in your dictionary are injected into Whisper as vocabulary hints. This helps with
-          names like <strong style={{ color: "#e4e4e7" }}>TAPMI</strong>,{" "}
-          <strong style={{ color: "#e4e4e7" }}>Zepto</strong>, or{" "}
-          <strong style={{ color: "#e4e4e7" }}>Hinglish</strong> terms that standard models might mishear.
-          If you also set a <em>replacement</em>, that text is swapped in after transcription.
-        </div>
-      </div>
+      <section className="glass-panel" style={{ display: "flex", gap: 12, marginBottom: 14 }}>
+        <BookOpen size={17} color="var(--accent)" style={{ marginTop: 2, flexShrink: 0 }} />
+        <p className="row-desc" style={{ margin: 0 }}>
+          Terms are sent to Whisper as vocabulary hints. Add names, acronyms, brands, or Hinglish words that local models
+          often mishear.
+        </p>
+      </section>
 
-      {/* Add form */}
       {showForm && (
-        <div
-          style={{
-            background: "#111",
-            border: "1px solid #2a2a2a",
-            borderRadius: "12px",
-            padding: "20px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "12px",
-          }}
-        >
-          <div style={{ fontSize: "13px", fontWeight: 600, color: "#a1a1aa" }}>New Dictionary Entry</div>
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+        <section className="glass-panel" style={{ marginBottom: 14 }}>
+          <div className="section-label">New entry</div>
+          <div className="grid cols-3">
+            <input className="field" placeholder="Term" value={term} onChange={(e) => setTerm(e.target.value)} />
             <input
-              placeholder="Term (e.g. TAPMI)"
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-              style={inputStyle}
-              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            />
-            <input
-              placeholder="Pronunciation hint (optional)"
+              className="field"
+              placeholder="Pronunciation hint"
               value={pronunciation}
               onChange={(e) => setPronunciation(e.target.value)}
-              style={inputStyle}
             />
             <input
-              placeholder="Replacement text (optional)"
+              className="field"
+              placeholder="Replacement text"
               value={replacement}
               onChange={(e) => setReplacement(e.target.value)}
-              style={inputStyle}
+              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             />
           </div>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button
-              onClick={handleAdd}
-              disabled={!term.trim() || adding}
-              style={{
-                background: "#7c3aed",
-                border: "none",
-                borderRadius: "7px",
-                padding: "9px 18px",
-                fontSize: "13px",
-                color: "#fff",
-                cursor: "pointer",
-                opacity: (!term.trim() || adding) ? 0.5 : 1,
-              }}
-            >
-              {adding ? "Adding…" : "Add Entry"}
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button className="button primary" disabled={!term.trim() || adding} onClick={handleAdd}>
+              {adding ? "Adding" : "Add entry"}
             </button>
-            <button
-              onClick={() => setShowForm(false)}
-              style={{
-                background: "#1a1a1a",
-                border: "1px solid #2a2a2a",
-                borderRadius: "7px",
-                padding: "9px 18px",
-                fontSize: "13px",
-                color: "#a1a1aa",
-                cursor: "pointer",
-              }}
-            >
+            <button className="button" onClick={() => setShowForm(false)}>
               Cancel
             </button>
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Table */}
       {entries.length === 0 ? (
-        <div
-          style={{
-            background: "#0a0a0a",
-            border: "1px dashed #2a2a2a",
-            borderRadius: "12px",
-            padding: "48px 24px",
-            textAlign: "center",
-          }}
-        >
-          <div style={{ fontSize: "36px", marginBottom: "12px" }}>📖</div>
-          <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#fafafa", margin: "0 0 8px" }}>
-            Dictionary is empty
-          </h3>
-          <p style={{ fontSize: "13px", color: "#71717a", margin: 0 }}>
-            Add terms like your name, company, product names, or technical acronyms.
-          </p>
-        </div>
+        <section className="empty-state">
+          <BookOpen size={40} />
+          <h3>Dictionary is empty</h3>
+          <p>Add your name, company, product names, technical terms, or acronyms.</p>
+        </section>
       ) : (
-        <div
-          style={{
-            background: "#111",
-            border: "1px solid #1f1f1f",
-            borderRadius: "12px",
-            overflow: "hidden",
-          }}
-        >
-          {/* Table header */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr 1fr auto",
-              padding: "12px 16px",
-              background: "#0a0a0a",
-              borderBottom: "1px solid #1f1f1f",
-              fontSize: "11px",
-              color: "#52525b",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              gap: "16px",
-            }}
-          >
+        <section className="table-panel">
+          <div className="table-row table-head" style={{ gridTemplateColumns: "1fr 1fr 1fr 32px" }}>
             <span>Term</span>
             <span>Pronunciation</span>
             <span>Replacement</span>
-            <span></span>
+            <span />
           </div>
-          {entries.map((entry, i) => (
-            <div
-              key={entry.id}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr 1fr auto",
-                padding: "12px 16px",
-                borderBottom: i < entries.length - 1 ? "1px solid #1a1a1a" : "none",
-                gap: "16px",
-                alignItems: "center",
-              }}
-            >
-              <span style={{ fontSize: "14px", color: "#e4e4e7", fontWeight: 500 }}>{entry.term}</span>
-              <span style={{ fontSize: "13px", color: "#71717a", fontStyle: entry.pronunciation ? "normal" : "italic" }}>
-                {entry.pronunciation || "—"}
-              </span>
-              <span style={{ fontSize: "13px", color: "#71717a", fontStyle: entry.replacement ? "normal" : "italic" }}>
-                {entry.replacement || "—"}
-              </span>
-              <button
-                onClick={() => handleDelete(entry.id)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  color: "#3f3f46",
-                  padding: "4px",
-                  borderRadius: "4px",
-                }}
-                onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "#ef4444")}
-                onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "#3f3f46")}
-              >
+          {entries.map((entry) => (
+            <div key={entry.id} className="table-row" style={{ gridTemplateColumns: "1fr 1fr 1fr 32px" }}>
+              <span className="row-title truncate">{entry.term}</span>
+              <span className="row-desc truncate">{entry.pronunciation || "None"}</span>
+              <span className="row-desc truncate">{entry.replacement || "None"}</span>
+              <button className="button icon borderless danger" onClick={() => handleDelete(entry.id)} aria-label="Delete term">
                 <Trash2 size={14} />
               </button>
             </div>
           ))}
-        </div>
+        </section>
       )}
     </div>
   );

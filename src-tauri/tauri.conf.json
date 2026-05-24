@@ -36,6 +36,7 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false,
+        "focus": false,
         "url": "/bubble"
       }
     ],

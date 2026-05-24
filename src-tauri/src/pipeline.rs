@@ -8,6 +8,8 @@ pub struct PipelineState {
     pub privacy_mode: std::sync::Mutex<bool>,
     pub is_processing: std::sync::Mutex<bool>,
     pub current_language: std::sync::Mutex<String>,
+    pub is_command_mode: std::sync::Mutex<bool>,
+    pub command_mode_text: std::sync::Mutex<String>,
 }
 
 impl PipelineState {
@@ -16,6 +18,8 @@ impl PipelineState {
             privacy_mode: std::sync::Mutex::new(false),
             is_processing: std::sync::Mutex::new(false),
             current_language: std::sync::Mutex::new("en".to_string()),
+            is_command_mode: std::sync::Mutex::new(false),
+            command_mode_text: std::sync::Mutex::new(String::new()),
         }
     }
 }

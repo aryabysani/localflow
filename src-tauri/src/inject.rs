@@ -7,7 +7,7 @@ mod win {
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
         KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY, VK_CONTROL, VK_RETURN, VK_V,
     };
-    pub use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND};
+    pub use windows::Win32::Foundation::{CloseHandle, HANDLE, HGLOBAL, HWND};
     pub use windows::Win32::UI::WindowsAndMessaging::{
         GetForegroundWindow, GetWindowThreadProcessId,
     };
@@ -16,10 +16,9 @@ mod win {
     };
     pub use windows::Win32::System::ProcessStatus::GetModuleFileNameExW;
     pub use windows::Win32::System::DataExchange::{
-        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+        CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, SetClipboardData,
     };
     pub use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
-    pub use windows::Win32::System::Ole::CF_UNICODETEXT;
 }
 
 /// Inject text by typing each character via SendInput with KEYEVENTF_UNICODE.
@@ -112,6 +111,9 @@ pub async fn inject_text_clipboard(text: String) -> Result<(), String> {
         use win::*;
         use std::mem::size_of;
 
+        // Save current clipboard contents to restore later
+        let old_clipboard = get_clipboard_text().ok();
+
         set_clipboard_text(&text)?;
         tokio::time::sleep(std::time::Duration::from_millis(80)).await;
 
@@ -168,6 +170,13 @@ pub async fn inject_text_clipboard(text: String) -> Result<(), String> {
         ];
 
         unsafe { SendInput(&inputs, size_of::<INPUT>() as i32); }
+
+        // Restore old clipboard contents after a short delay to ensure paste has finished
+        if let Some(old_text) = old_clipboard {
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            let _ = set_clipboard_text(&old_text);
+        }
+
         Ok(())
     }
 
@@ -282,4 +291,125 @@ fn exe_to_friendly_name(exe: &str) -> String {
         _ => exe.trim_end_matches(".exe"),
     }
     .to_string()
+}
+
+/// Read text currently in the clipboard on Windows
+#[cfg(windows)]
+pub fn get_clipboard_text() -> Result<String, String> {
+    use win::*;
+
+    unsafe {
+        OpenClipboard(HWND::default()).map_err(|e| format!("OpenClipboard: {}", e))?;
+
+        // 13 is CF_UNICODETEXT
+        let handle = GetClipboardData(13);
+        if handle.is_err() {
+            let _ = CloseClipboard();
+            return Err("GetClipboardData failed".into());
+        }
+        let hmem = HGLOBAL(handle.unwrap().0);
+        if hmem.0.is_null() {
+            let _ = CloseClipboard();
+            return Err("Clipboard handle is null".into());
+        }
+
+        let ptr = GlobalLock(hmem);
+        if ptr.is_null() {
+            let _ = CloseClipboard();
+            return Err("GlobalLock failed".into());
+        }
+
+        // Read wide string until null-terminator
+        let mut len = 0;
+        let mut p = ptr as *const u16;
+        while *p != 0 {
+            len += 1;
+            p = p.add(1);
+        }
+
+        let slice = std::slice::from_raw_parts(ptr as *const u16, len);
+        let text = String::from_utf16_lossy(slice);
+
+        let _ = GlobalUnlock(hmem);
+        let _ = CloseClipboard();
+
+        Ok(text)
+    }
+}
+
+/// Simulated Copy command (Ctrl+C) and extraction of selected text
+pub async fn copy_selected_text() -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        use win::*;
+        use std::mem::size_of;
+
+        // Simulate Ctrl+C
+        let inputs = [
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_CONTROL,
+                        wScan: 0,
+                        dwFlags: Default::default(),
+                        time: 0,
+                        dwExtraInfo: 0,
+                    },
+                },
+            },
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(0x43), // 'C'
+                        wScan: 0,
+                        dwFlags: Default::default(),
+                        time: 0,
+                        dwExtraInfo: 0,
+                    },
+                },
+            },
+        ];
+        let inputs_up = [
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(0x43),
+                        wScan: 0,
+                        dwFlags: KEYEVENTF_KEYUP,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    },
+                },
+            },
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_CONTROL,
+                        wScan: 0,
+                        dwFlags: KEYEVENTF_KEYUP,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    },
+                },
+            },
+        ];
+
+        unsafe {
+            SendInput(&inputs, size_of::<INPUT>() as i32);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            SendInput(&inputs_up, size_of::<INPUT>() as i32);
+        }
+
+        // Wait for target app to write to clipboard
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+        get_clipboard_text()
+    }
+
+    #[cfg(not(windows))]
+    Err("Only supported on Windows".into())
 }

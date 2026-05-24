@@ -1,106 +1,395 @@
-import { Keyboard } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Info, Keyboard, MousePointerClick } from "lucide-react";
+import { getSetting, setSetting, reloadGlobalShortcut } from "../lib/ipc";
 
-const shortcuts = [
-  {
-    action: "Toggle Dictation",
-    keys: ["Ctrl", "Shift", "Space"],
-    description: "Start/stop dictation (toggle mode). Works globally.",
-  },
-  {
-    action: "Push-to-Talk",
-    keys: ["Right Alt"],
-    description: "Hold to record, release to transcribe. (Right Alt based PTT — configure via rdev in future build)",
-  },
-  {
-    action: "Cancel Dictation",
-    keys: ["Esc"],
-    description: "Cancel active recording without injecting text. (Coming in next build)",
-  },
-  {
-    action: "Command Mode",
-    keys: ["Right Ctrl", "+", "Right Alt"],
-    description: "Select text first, then speak a transformation command. (Coming in next build)",
-  },
-];
+function getWindowsVkCode(code: string, keyCode: number): number {
+  switch (code) {
+    case "ShiftLeft": return 0xA0; // VK_LSHIFT
+    case "ShiftRight": return 0xA1; // VK_RSHIFT
+    case "ControlLeft": return 0xA2; // VK_LCONTROL
+    case "ControlRight": return 0xA3; // VK_RCONTROL
+    case "AltLeft": return 0xA4; // VK_LMENU
+    case "AltRight": return 0xA5; // VK_RMENU
+    case "CapsLock": return 0x14; // VK_CAPITAL
+    case "Escape": return 0x1B; // VK_ESCAPE
+    case "Space": return 0x20; // VK_SPACE
+    case "Backquote": return 0xC0; // VK_OEM_3 (tilde)
+    default: return keyCode;
+  }
+}
+
+function Keycaps({ keys }: { keys: string[] }) {
+  return (
+    <span className="keycap-row">
+      {keys.map((key, idx) =>
+        key === "+" ? (
+          <span key={idx} className="keycap-plus">
+            +
+          </span>
+        ) : (
+          <span key={idx} className="keycap">
+            {key}
+          </span>
+        ),
+      )}
+    </span>
+  );
+}
 
 export default function ShortcutsPage() {
+  const [shortcutToggle, setShortcutToggle] = useState("Ctrl+Alt");
+  const [keybindKeyboardName, setKeybindKeyboardName] = useState("Ctrl+Q");
+  const [keybindKeyboardMode, setKeybindKeyboardMode] = useState("hold");
+  
+  const [keybindMouse, setKeybindMouse] = useState("middle");
+  const [keybindMouseName, setKeybindMouseName] = useState("Middle Click");
+  const [keybindMouseMode, setKeybindMouseMode] = useState("hold");
+
+  // Re-binding active listener states
+  const [isBinding, setIsBinding] = useState<"toggle" | "keyboard" | "mouse" | null>(null);
+  const [bindResult, setBindResult] = useState<any>(null);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      const toggle = await getSetting("shortcut_toggle");
+      if (toggle) setShortcutToggle(toggle);
+
+      const kbName = await getSetting("keybind_keyboard_name");
+      const kbMode = await getSetting("keybind_keyboard_mode");
+      const kbOld = await getSetting("keybind_keyboard");
+
+      if (kbName) {
+        setKeybindKeyboardName(kbName);
+      } else if (kbOld) {
+        const mapping: Record<string, string> = {
+          rshift_ralt: "Right Alt",
+          rshift_double: "Right Shift",
+          ralt_hold: "Right Alt",
+          caps_hold: "Caps Lock",
+          tilde_hold: "Tilde (~)",
+        };
+        setKeybindKeyboardName(mapping[kbOld] ?? "Right Alt");
+      } else {
+        setKeybindKeyboardName("Ctrl+Q"); // default fallback
+      }
+
+      if (kbMode) {
+        setKeybindKeyboardMode(kbMode);
+      } else if (kbOld) {
+        setKeybindKeyboardMode(kbOld.includes("double") || kbOld === "rshift_ralt" ? "double_tap" : "hold");
+      }
+
+      const mouse = await getSetting("keybind_mouse");
+      const mouseName = await getSetting("keybind_mouse_name");
+      const mouseMode = await getSetting("keybind_mouse_mode");
+      
+      if (mouse) {
+        setKeybindMouse(mouse);
+      } else {
+        setKeybindMouse("middle"); // default
+      }
+      if (mouseName) {
+        setKeybindMouseName(mouseName);
+      } else if (mouse && mouse !== "none") {
+        const mapping: Record<string, string> = {
+          middle: "Middle Click",
+          back: "Mouse Button 4",
+          forward: "Mouse Button 5",
+          right: "Right Click",
+        };
+        setKeybindMouseName(mapping[mouse] ?? "Middle Click");
+      } else {
+        setKeybindMouseName("Middle Click");
+      }
+      if (mouseMode) setKeybindMouseMode(mouseMode);
+    };
+    loadSettings().catch(console.error);
+  }, []);
+
+  // Window Event Listeners for Keybinding Capture
+  useEffect(() => {
+    if (!isBinding) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.key === "Escape" && !bindResult) {
+        setIsBinding(null);
+        return;
+      }
+
+      if (isBinding === "toggle") {
+        if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) {
+          return;
+        }
+
+        const parts: string[] = [];
+        if (e.ctrlKey) parts.push("Ctrl");
+        if (e.shiftKey) parts.push("Shift");
+        if (e.altKey) parts.push("Alt");
+        
+        let keyName = e.key;
+        if (e.code === "Space") keyName = "Space";
+        keyName = keyName.charAt(0).toUpperCase() + keyName.slice(1);
+        parts.push(keyName);
+
+        const shortcutStr = parts.join("+");
+        setSetting("shortcut_toggle", shortcutStr).then(async () => {
+          try {
+            await reloadGlobalShortcut();
+          } catch (err) {
+            console.error("Failed to reload global shortcut:", err);
+          }
+          setShortcutToggle(shortcutStr);
+          setIsBinding(null);
+        });
+        return;
+      }
+
+      // Keyboard Trigger
+      let name = "";
+      const parts: string[] = [];
+      if (e.ctrlKey) parts.push("Ctrl");
+      if (e.shiftKey) parts.push("Shift");
+      if (e.altKey) parts.push("Alt");
+
+      // Main key name mapping
+      let mainKeyName = e.key;
+      if (e.code === "Space") mainKeyName = "Space";
+      else if (e.code === "AltRight") mainKeyName = "Right Alt";
+      else if (e.code === "AltLeft") mainKeyName = "Left Alt";
+      else if (e.code === "ControlRight") mainKeyName = "Right Ctrl";
+      else if (e.code === "ControlLeft") mainKeyName = "Left Ctrl";
+      else if (e.code === "ShiftRight") mainKeyName = "Right Shift";
+      else if (e.code === "ShiftLeft") mainKeyName = "Left Shift";
+
+      mainKeyName = mainKeyName.charAt(0).toUpperCase() + mainKeyName.slice(1);
+
+      if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) {
+        // If they only hold a modifier, display it
+        name = mainKeyName;
+      } else {
+        parts.push(mainKeyName);
+        name = parts.join("+");
+      }
+
+      const vk = getWindowsVkCode(e.code, e.keyCode);
+      setBindResult({ type: "keyboard", name, vk });
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if (isBinding === "toggle") return;
+
+      let name = "";
+      let buttonType = "";
+
+      if (e.button === 1) {
+        name = "Middle Click";
+        buttonType = "middle";
+      } else if (e.button === 3) {
+        name = "Mouse Button 4";
+        buttonType = "back";
+      } else if (e.button === 4) {
+        name = "Mouse Button 5";
+        buttonType = "forward";
+      } else if (e.button === 2) {
+        name = "Right Click";
+        buttonType = "right";
+      } else {
+        return; // Ignore left clicks
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      setBindResult({ type: "mouse", name, button: buttonType });
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("mousedown", handleMouseDown, true);
+    window.addEventListener("contextmenu", handleContextMenu, true);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("mousedown", handleMouseDown, true);
+      window.removeEventListener("contextmenu", handleContextMenu, true);
+    };
+  }, [isBinding, bindResult]);
+
+  const handleSaveBind = async (mode: string) => {
+    if (!bindResult) return;
+
+    if (isBinding === "keyboard") {
+      await setSetting("keybind_keyboard_vk", String(bindResult.vk));
+      await setSetting("keybind_keyboard_name", bindResult.name);
+      await setSetting("keybind_keyboard_mode", mode);
+      await setSetting("keybind_keyboard", ""); // Clear legacy
+
+      setKeybindKeyboardName(bindResult.name);
+      setKeybindKeyboardMode(mode);
+    } else if (isBinding === "mouse") {
+      await setSetting("keybind_mouse", bindResult.button);
+      await setSetting("keybind_mouse_name", bindResult.name);
+      await setSetting("keybind_mouse_mode", mode);
+
+      setKeybindMouse(bindResult.button);
+      setKeybindMouseName(bindResult.name);
+      setKeybindMouseMode(mode);
+    }
+
+    setIsBinding(null);
+    setBindResult(null);
+  };
+
+  const handleClearMouseBind = async () => {
+    await setSetting("keybind_mouse", "none");
+    await setSetting("keybind_mouse_name", "None");
+    setKeybindMouse("none");
+    setKeybindMouseName("None");
+  };
+
+  // Build shortcut list for display
+  const toggleKeys = shortcutToggle.split("+");
+
+  const shortcuts = [
+    ["Toggle dictation", toggleKeys, "Press once to start, and once you're done talking, press those keys again.", Keyboard],
+    ["Instant dictation", [keybindKeyboardName], "Keep holding the key to record. If you release it, recording stops and starts translating.", Keyboard],
+    ...(keybindMouse !== "none" ? [
+      ["Mouse dictation", [keybindMouseName], `Hold mouse button to record (Release to transcribe).`, MousePointerClick]
+    ] as const : []),
+    ["Cancel recording", ["Esc"], "Cancel without transcribing or pasting.", Keyboard],
+  ] as const;
+
   return (
-    <div style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "24px", maxWidth: "640px" }}>
-      <div>
-        <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#fafafa", margin: 0 }}>Shortcuts</h1>
-        <p style={{ fontSize: "13px", color: "#71717a", margin: "4px 0 0" }}>
-          Global keyboard shortcuts that work in any Windows application.
-        </p>
+    <div className="page narrow" style={{ position: "relative" }}>
+      {/* Keybinding Modal Overlay */}
+      {isBinding && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.55)",
+          backdropFilter: "blur(6px)",
+          display: "grid",
+          placeItems: "center",
+          zIndex: 9999,
+        }}>
+          <div className="glass-panel" style={{ width: 340, padding: 24, textAlign: "center", display: "flex", flexDirection: "column", gap: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
+              {isBinding === "toggle" ? "Record Global Toggle" :
+               isBinding === "keyboard" ? "Record Keyboard Trigger" :
+               "Record Mouse Trigger"}
+            </h3>
+            
+            {!bindResult ? (
+              <>
+                <p style={{ margin: 0, fontSize: 13, color: "var(--secondary)", lineHeight: "18px" }}>
+                  Press the key or mouse button combination you want to bind.
+                </p>
+                <div style={{ fontSize: 20, fontWeight: 700, padding: "15px 0", color: "var(--accent)" }}>
+                  Listening...
+                </div>
+                <p style={{ margin: 0, fontSize: 11, color: "var(--tertiary)" }}>
+                  Press <kbd style={{ padding: "2px 4px", background: "var(--quaternary)", borderRadius: 3 }}>Esc</kbd> to cancel.
+                </p>
+              </>
+            ) : (
+              <>
+                <p style={{ margin: 0, fontSize: 13, color: "var(--secondary)" }}>
+                  Detected button: <strong style={{ color: "var(--accent)" }}>{bindResult.name}</strong>
+                </p>
+                
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+                  <span style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Choose trigger type</span>
+                  <button className="button primary" style={{ width: "100%", justifyContent: "center" }} onClick={() => handleSaveBind("hold")}>Hold to talk (Release to stop)</button>
+                  <button className="button" style={{ width: "100%", justifyContent: "center" }} onClick={() => handleSaveBind("toggle")}>Tap to toggle (Start / Stop)</button>
+                  {isBinding === "keyboard" && (
+                    <button className="button" style={{ width: "100%", justifyContent: "center" }} onClick={() => handleSaveBind("double_tap")}>Double-tap to toggle</button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="page-header">
+        <div>
+          <p className="page-kicker">Global triggers</p>
+          <h2 className="page-title">Shortcuts</h2>
+        </div>
       </div>
 
-      <div
-        style={{
-          background: "#111",
-          border: "1px solid #1f1f1f",
-          borderRadius: "12px",
-          overflow: "hidden",
-        }}
-      >
-        {shortcuts.map((sc, i) => (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "20px",
-              padding: "18px 20px",
-              borderBottom: i < shortcuts.length - 1 ? "1px solid #1a1a1a" : "none",
-            }}
-          >
-            <Keyboard size={16} style={{ color: "#52525b", flexShrink: 0 }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: "14px", fontWeight: 500, color: "#fafafa", marginBottom: "4px" }}>
-                {sc.action}
+      <section className="table-panel" style={{ marginBottom: 16 }}>
+        {shortcuts.map(([action, keys, description, Icon]) => (
+          <div key={action} className="setting-row">
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Icon size={16} color="var(--secondary)" />
+              <div>
+                <div className="setting-title">{action}</div>
+                <div className="setting-desc">{description}</div>
               </div>
-              <div style={{ fontSize: "12px", color: "#71717a" }}>{sc.description}</div>
             </div>
-            <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
-              {sc.keys.map((key, ki) => (
-                <span
-                  key={ki}
-                  style={
-                    key === "+"
-                      ? { color: "#3f3f46", fontSize: "12px", alignSelf: "center" }
-                      : {
-                          background: "#1a1a1a",
-                          border: "1px solid #2a2a2a",
-                          borderRadius: "6px",
-                          padding: "4px 10px",
-                          fontSize: "12px",
-                          fontFamily: "monospace",
-                          color: "#a78bfa",
-                          whiteSpace: "nowrap",
-                        }
-                  }
-                >
-                  {key}
-                </span>
-              ))}
-            </div>
+            <Keycaps keys={[...keys]} />
           </div>
         ))}
-      </div>
+      </section>
 
-      <div
-        style={{
-          background: "#0f0f0f",
-          border: "1px solid #2a2a2a",
-          borderRadius: "10px",
-          padding: "14px 18px",
-          fontSize: "13px",
-          color: "#71717a",
-          lineHeight: 1.6,
-        }}
-      >
-        💡 Shortcut rebinding UI is planned for a future release. For now, the toggle shortcut is{" "}
-        <strong style={{ color: "#a78bfa", fontFamily: "monospace" }}>Ctrl+Shift+Space</strong> and is
-        registered globally. Ensure no other app has claimed this combination.
-      </div>
+      <section className="glass-panel">
+        <div className="section-label">Configure triggers</div>
+        <div className="setting-list" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* Global Toggle Re-binder */}
+          <div className="setting-row">
+            <div>
+              <div className="setting-title">Toggle dictation</div>
+              <div className="setting-desc">Double-tap or combination to trigger anywhere.</div>
+            </div>
+            <button className="button" onClick={() => setIsBinding("toggle")}>
+              Rebind Toggle ({shortcutToggle})
+            </button>
+          </div>
+
+          {/* Keyboard Trigger Re-binder */}
+          <div className="setting-row" style={{ borderTop: "1px solid var(--separator-soft)", paddingTop: 12 }}>
+            <div>
+              <div className="setting-title">Instant dictation key</div>
+              <div className="setting-desc">Press button to bind any custom key.</div>
+            </div>
+            <button className="button" onClick={() => setIsBinding("keyboard")}>
+              Rebind Keyboard ({keybindKeyboardName} - {keybindKeyboardMode})
+            </button>
+          </div>
+
+          {/* Mouse Trigger Re-binder */}
+          <div className="setting-row" style={{ borderTop: "1px solid var(--separator-soft)", paddingTop: 12 }}>
+            <div>
+              <div className="setting-title">Mouse trigger button</div>
+              <div className="setting-desc">Bind middle-click or mouse side buttons.</div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {keybindMouse !== "none" && (
+                <button className="button danger" onClick={handleClearMouseBind}>
+                  Disable
+                </button>
+              )}
+              <button className="button" onClick={() => setIsBinding("mouse")}>
+                Rebind Mouse ({keybindMouseName} - {keybindMouseMode})
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="glass-panel mac-callout" style={{ marginTop: 16 }}>
+        <Info size={16} color="var(--accent)" />
+        <p className="row-desc" style={{ margin: 0 }}>
+          Click "Rebind" buttons and press any key/mouse combination to save immediately.
+        </p>
+      </section>
     </div>
   );
 }

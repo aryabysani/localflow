@@ -1,6 +1,7 @@
 mod audio;
 mod cleanup;
 mod db;
+mod hook;
 mod inject;
 mod pipeline;
 mod whisper;
@@ -11,7 +12,6 @@ use tauri::{
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 
 use db::DbState;
 use pipeline::PipelineState;
@@ -35,63 +35,30 @@ pub fn run() {
                 db::init_db(&conn).expect("Failed to initialize database");
                 app.manage(DbState(std::sync::Mutex::new(conn)));
 
+                // Initialize Windows low-level keyboard hook
+                hook::init_hook(
+                    app.handle().clone(),
+                    audio_state.clone(),
+                    pipeline_state.clone(),
+                );
+
+                // Show the bubble window on startup
+                show_bubble_window(app.handle());
+
+                // Intercept main window close to hide it instead of closing, keeping it in tray
+                if let Some(main_win) = app.get_webview_window("main") {
+                    let main_win_clone = main_win.clone();
+                    main_win.on_window_event(move |event| {
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            api.prevent_close();
+                            let _ = main_win_clone.hide();
+                        }
+                    });
+                }
+
                 // ── Global shortcuts ────────────────────────────────────────
-                let app_handle = app.handle().clone();
-                let audio_for_sc = audio_state.clone();
-                let pipeline_for_sc = pipeline_state.clone();
-
-                // Ctrl+Shift+Space — toggle recording
-                let shortcut_toggle =
-                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space);
-
-                {
-                    let ah = app_handle.clone();
-                    let audio_h = audio_for_sc.clone();
-                    let pipeline_h = pipeline_for_sc.clone();
-
-                    app.global_shortcut().on_shortcut(
-                        shortcut_toggle,
-                        move |_app, _shortcut, _event| {
-                            let is_rec = *audio_h.is_recording.lock().unwrap();
-                            let is_proc = *pipeline_h.is_processing.lock().unwrap();
-
-                            if is_proc {
-                                return;
-                            }
-
-                            if is_rec {
-                                let ah2 = ah.clone();
-                                let audio2 = audio_h.clone();
-                                let pipeline2 = pipeline_h.clone();
-                                tauri::async_runtime::spawn(async move {
-                                    // Hide bubble
-                                    if let Some(b) = ah2.get_webview_window("bubble") {
-                                        b.hide().ok();
-                                    }
-                                    // Stop stream inline
-                                    {
-                                        *audio2.stream.lock().unwrap() = None;
-                                        *audio2.is_recording.lock().unwrap() = false;
-                                    }
-                                    // Run pipeline inline
-                                    run_pipeline(&ah2, &audio2, &pipeline2).await;
-                                });
-                            } else {
-                                // Start recording
-                                let device = audio_h.device_name.lock().unwrap().clone();
-                                let dev_opt = if device.is_empty() { None } else { Some(device) };
-                                if let Err(e) = audio::start_capture_internal(&audio_h, dev_opt) {
-                                    eprintln!("Failed to start recording: {}", e);
-                                    return;
-                                }
-                                ah.emit("recording-started", ()).ok();
-                                // Show bubble
-                                if let Some(b) = ah.get_webview_window("bubble") {
-                                    b.show().ok();
-                                }
-                            }
-                        },
-                    )?;
+                if let Err(e) = register_global_toggle_shortcut(app.handle()) {
+                    eprintln!("Failed to register initial global shortcut: {}", e);
                 }
 
                 // ── System Tray ─────────────────────────────────────────────
@@ -190,13 +157,43 @@ pub fn run() {
             // Frontend-callable
             start_recording_cmd,
             stop_and_transcribe_cmd,
+            get_system_stats,
+            reload_global_shortcut,
         ])
         .run(tauri::generate_context!())
         .expect("error while running FlowLocal");
 }
 
+/// Position and show the compact bubble window at the bottom right of the active monitor.
+pub fn show_bubble_window(app: &tauri::AppHandle) {
+    if let Some(b) = app.get_webview_window("bubble") {
+        if let Ok(Some(monitor)) = b.current_monitor() {
+            let monitor_size = monitor.size();
+            let monitor_pos = monitor.position();
+            let scale_factor = monitor.scale_factor();
+            
+            // Idle pill size: 56 × 36 logical pixels
+            let bubble_width = (56.0 * scale_factor) as i32;
+            let bubble_height = (36.0 * scale_factor) as i32;
+            
+            // ~1 cm margin from the bottom-right corner
+            let margin = (40.0 * scale_factor) as i32;
+            let x = monitor_pos.x + monitor_size.width as i32 - bubble_width - margin;
+            let y = monitor_pos.y + monitor_size.height as i32 - bubble_height - margin;
+            
+            let _ = b.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                width: bubble_width as u32,
+                height: bubble_height as u32,
+            }));
+            let _ = b.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+        }
+        let _ = b.show();
+        let _ = b.set_always_on_top(true);
+    }
+}
+
 /// Run the STT pipeline after recording stops
-async fn run_pipeline(
+pub async fn run_pipeline(
     app: &tauri::AppHandle,
     audio: &Arc<audio::AudioState>,
     pipeline: &Arc<PipelineState>,
@@ -204,6 +201,7 @@ async fn run_pipeline(
     use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
     *pipeline.is_processing.lock().unwrap() = true;
+    app.emit("recording-stopped", ()).ok();
     app.emit("processing-started", ()).ok();
 
     let audio_data: Vec<f32> = {
@@ -284,11 +282,13 @@ async fn run_pipeline(
             params.set_initial_prompt(&prompt);
         }
         state.full(params, &audio_data).map_err(|e| e.to_string())?;
-        let n = state.full_n_segments().map_err(|e| e.to_string())?;
+        let n = state.full_n_segments();
         let mut text = String::new();
         for i in 0..n {
-            if let Ok(seg) = state.full_get_segment_text(i) {
-                text.push_str(&seg);
+            if let Some(segment) = state.get_segment(i) {
+                if let Ok(seg) = segment.to_str() {
+                    text.push_str(seg);
+                }
             }
         }
         Ok::<String, String>(text.trim().to_string())
@@ -297,8 +297,15 @@ async fn run_pipeline(
 
     let raw = match raw_text {
         Ok(Ok(t)) => t,
-        Ok(Err(e)) | Err(e) => {
+        Ok(Err(e)) => {
             let msg = format!("Transcription error: {}", e);
+            eprintln!("{}", msg);
+            *pipeline.is_processing.lock().unwrap() = false;
+            app.emit("processing-done", serde_json::json!({"error": msg})).ok();
+            return;
+        }
+        Err(e) => {
+            let msg = format!("Task join error: {}", e);
             eprintln!("{}", msg);
             *pipeline.is_processing.lock().unwrap() = false;
             app.emit("processing-done", serde_json::json!({"error": msg})).ok();
@@ -313,16 +320,54 @@ async fn run_pipeline(
     }
 
     let cleaned = cleanup::regex_cleanup(&raw);
-    let word_count = cleaned.split_whitespace().count() as i64;
+
+    let is_cmd = {
+        let mut cmd = pipeline.is_command_mode.lock().unwrap();
+        let was_cmd = *cmd;
+        *cmd = false; // Reset command mode
+        was_cmd
+    };
+
+    let text_to_inject = if is_cmd {
+        let selected = {
+            let mut txt = pipeline.command_mode_text.lock().unwrap();
+            let val = txt.clone();
+            *txt = String::new(); // Reset
+            val
+        };
+        match cleanup::command_mode_transform(selected, cleaned.clone(), app_exe.clone()) {
+            Ok(transformed) => transformed,
+            Err(e) => {
+                eprintln!("Command transform failed: {}", e);
+                cleaned.clone()
+            }
+        }
+    } else {
+        cleaned.clone()
+    };
+
+    let word_count = text_to_inject.split_whitespace().count() as i64;
 
     // Save to DB
     let privacy = *pipeline.privacy_mode.lock().unwrap();
     if !privacy {
         if let Some(db_state) = app.try_state::<DbState>() {
             let conn = db_state.0.lock().unwrap();
+            let track_apps: String = conn.query_row(
+                "SELECT value FROM settings WHERE key = 'track_apps'",
+                [],
+                |row| row.get(0),
+            ).unwrap_or_else(|_| "true".to_string());
+
+            let (final_app_name, final_app_exe) = if track_apps == "false" {
+                ("".to_string(), "".to_string())
+            } else {
+                (app_name.clone(), app_exe.clone())
+            };
+
             let _ = conn.execute(
                 "INSERT INTO dictation_history (app_name, app_exe, raw_text, cleaned_text, word_count, duration_secs, language) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                rusqlite::params![app_name, app_exe, raw, cleaned, word_count, duration_secs, language],
+                rusqlite::params![final_app_name, final_app_exe, raw, text_to_inject, word_count, duration_secs, language],
             );
         }
     }
@@ -331,7 +376,7 @@ async fn run_pipeline(
         "processing-done",
         serde_json::json!({
             "raw": raw,
-            "cleaned": cleaned,
+            "cleaned": text_to_inject,
             "word_count": word_count,
             "app_name": app_name,
         }),
@@ -339,7 +384,7 @@ async fn run_pipeline(
     .ok();
 
     // Inject
-    if let Err(e) = inject::inject_text_clipboard(cleaned).await {
+    if let Err(e) = inject::inject_text_clipboard(text_to_inject).await {
         eprintln!("Injection failed: {}", e);
     }
 
@@ -360,9 +405,7 @@ async fn start_recording_cmd(
     let dev_opt = if device.is_empty() { None } else { Some(device) };
     audio::start_capture_internal(audio.inner(), dev_opt)?;
     app.emit("recording-started", ()).ok();
-    if let Some(b) = app.get_webview_window("bubble") {
-        b.show().ok();
-    }
+    show_bubble_window(&app);
     Ok(())
 }
 
@@ -374,17 +417,260 @@ async fn stop_and_transcribe_cmd(
     _db: tauri::State<'_, DbState>,
     app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
-    if let Some(b) = app.get_webview_window("bubble") {
-        b.hide().ok();
-    }
-    {
-        *audio.stream.lock().unwrap() = None;
-        *audio.is_recording.lock().unwrap() = false;
-    }
+    audio::stop_capture_internal(audio.inner());
 
     let audio_arc = audio.inner().clone();
     let pipeline_arc = pipeline.inner().clone();
     run_pipeline(&app, &audio_arc, &pipeline_arc).await;
 
     Ok(serde_json::json!({"status": "done"}))
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct SystemStats {
+    pub process_cpu: f64,
+    pub process_memory_mb: f64,
+    pub system_cpu: f64,
+    pub system_memory_pct: f64,
+    pub estimated_power_watts: f64,
+    pub app_state: String,
+}
+
+#[tauri::command]
+async fn get_system_stats(
+    audio: tauri::State<'_, Arc<audio::AudioState>>,
+    pipeline: tauri::State<'_, Arc<pipeline::PipelineState>>,
+) -> Result<SystemStats, String> {
+    // 1. Get process memory info on Windows
+    let memory_mb = {
+        #[cfg(windows)]
+        {
+            use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+            use windows::Win32::System::Threading::GetCurrentProcess;
+            unsafe {
+                let handle = GetCurrentProcess();
+                let mut counters = PROCESS_MEMORY_COUNTERS::default();
+                if GetProcessMemoryInfo(
+                    handle,
+                    &mut counters,
+                    std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+                ).is_ok() {
+                    (counters.WorkingSetSize as f64) / 1024.0 / 1024.0
+                } else {
+                    0.0
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            0.0
+        }
+    };
+
+    // 2. Get system memory info
+    let sys_memory_pct = {
+        #[cfg(windows)]
+        {
+            use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+            unsafe {
+                let mut status = MEMORYSTATUSEX::default();
+                status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+                if GlobalMemoryStatusEx(&mut status).is_ok() {
+                    status.dwMemoryLoad as f64
+                } else {
+                    0.0
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            0.0
+        }
+    };
+
+    // 3. System CPU and process CPU delta calculation
+    use once_cell::sync::Lazy;
+    use std::sync::Mutex;
+    use std::time::Instant;
+
+    struct LastCpuSample {
+        last_time: Instant,
+        last_idle: u64,
+        last_kernel: u64,
+        last_user: u64,
+        last_process_kernel: u64,
+        last_process_user: u64,
+        last_result_sys: f64,
+        last_result_proc: f64,
+    }
+
+    static LAST_CPU: Lazy<Mutex<LastCpuSample>> = Lazy::new(|| {
+        Mutex::new(LastCpuSample {
+            last_time: Instant::now(),
+            last_idle: 0,
+            last_kernel: 0,
+            last_user: 0,
+            last_process_kernel: 0,
+            last_process_user: 0,
+            last_result_sys: 5.0,
+            last_result_proc: 1.0,
+        })
+    });
+
+    let mut cache = LAST_CPU.lock().unwrap();
+    let now = Instant::now();
+    let elapsed = now.duration_since(cache.last_time);
+
+    if elapsed.as_millis() > 500 {
+        #[cfg(windows)]
+        {
+            use windows::Win32::System::Threading::{GetSystemTimes, GetProcessTimes, GetCurrentProcess};
+            use windows::Win32::Foundation::FILETIME;
+
+            unsafe {
+                let mut idle = FILETIME::default();
+                let mut kernel = FILETIME::default();
+                let mut user = FILETIME::default();
+
+                let mut proc_creation = FILETIME::default();
+                let mut proc_exit = FILETIME::default();
+                let mut proc_kernel = FILETIME::default();
+                let mut proc_user = FILETIME::default();
+
+                let sys_ok = GetSystemTimes(Some(&mut idle), Some(&mut kernel), Some(&mut user)).is_ok();
+                let proc_ok = GetProcessTimes(
+                    GetCurrentProcess(),
+                    &mut proc_creation,
+                    &mut proc_exit,
+                    &mut proc_kernel,
+                    &mut proc_user,
+                ).is_ok();
+
+                if sys_ok && proc_ok {
+                    let to_u64 = |ft: FILETIME| -> u64 {
+                        ((ft.dwHighDateTime as u64) << 32) | (ft.dwLowDateTime as u64)
+                    };
+
+                    let idle_val = to_u64(idle);
+                    let kernel_val = to_u64(kernel);
+                    let user_val = to_u64(user);
+
+                    let proc_kernel_val = to_u64(proc_kernel);
+                    let proc_user_val = to_u64(proc_user);
+
+                    let idle_diff = idle_val.saturating_sub(cache.last_idle);
+                    let kernel_diff = kernel_val.saturating_sub(cache.last_kernel);
+                    let user_diff = user_val.saturating_sub(cache.last_user);
+
+                    let proc_kernel_diff = proc_kernel_val.saturating_sub(cache.last_process_kernel);
+                    let proc_user_diff = proc_user_val.saturating_sub(cache.last_process_user);
+
+                    let total_sys = kernel_diff + user_diff;
+                    if total_sys > 0 {
+                        let sys_cpu = (1.0 - (idle_diff as f64 / total_sys as f64)) * 100.0;
+                        cache.last_result_sys = sys_cpu.clamp(0.0, 100.0);
+
+                        let proc_cpu = ((proc_kernel_diff + proc_user_diff) as f64 / total_sys as f64) * 100.0;
+                        cache.last_result_proc = proc_cpu.clamp(0.0, 100.0);
+                    }
+
+                    cache.last_idle = idle_val;
+                    cache.last_kernel = kernel_val;
+                    cache.last_user = user_val;
+                    cache.last_process_kernel = proc_kernel_val;
+                    cache.last_process_user = proc_user_val;
+                }
+            }
+        }
+        cache.last_time = now;
+    }
+
+    let system_cpu = cache.last_result_sys;
+    let process_cpu = cache.last_result_proc;
+
+    // 4. App state & estimated power
+    let is_rec = *audio.is_recording.lock().unwrap();
+    let is_proc = *pipeline.is_processing.lock().unwrap();
+
+    let (app_state, estimated_power_watts) = if is_proc {
+        ("Transcribing".to_string(), 14.5)
+    } else if is_rec {
+        ("Recording".to_string(), 1.8)
+    } else {
+        ("Idle".to_string(), 0.1)
+    };
+
+    Ok(SystemStats {
+        process_cpu,
+        process_memory_mb: memory_mb,
+        system_cpu,
+        system_memory_pct: sys_memory_pct,
+        estimated_power_watts,
+        app_state,
+    })
+}
+
+pub fn register_global_toggle_shortcut(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+    use std::str::FromStr;
+
+    let global_sc = app.global_shortcut();
+    
+    // Unregister all first to clear previous toggle triggers
+    let _ = global_sc.unregister_all();
+
+    // Get the shortcut string from database
+    let shortcut_str = if let Some(db_state) = app.try_state::<crate::db::DbState>() {
+        let conn = db_state.0.lock().unwrap();
+        conn.query_row(
+            "SELECT value FROM settings WHERE key = 'shortcut_toggle'",
+            [],
+            |row| row.get::<_, String>(0)
+        ).unwrap_or_else(|_| "Ctrl+Shift+Space".to_string())
+    } else {
+        "Ctrl+Shift+Space".to_string()
+    };
+
+    let shortcut = Shortcut::from_str(&shortcut_str)
+        .or_else(|_| Shortcut::from_str("Ctrl+Shift+Space"))
+        .map_err(|e| format!("Failed to parse global shortcut: {}", e))?;
+
+    
+    global_sc.on_shortcut(shortcut, move |app, _shortcut, _event| {
+        let audio = app.state::<Arc<crate::audio::AudioState>>();
+        let pipeline = app.state::<Arc<crate::pipeline::PipelineState>>();
+        
+        let is_rec = *audio.is_recording.lock().unwrap();
+        let is_proc = *pipeline.is_processing.lock().unwrap();
+
+        if is_proc {
+            return;
+        }
+
+        if is_rec {
+            let ah = app.clone();
+            let audio_h = audio.inner().clone();
+            let pipeline_h = pipeline.inner().clone();
+            tauri::async_runtime::spawn(async move {
+                crate::audio::stop_capture_internal(&audio_h);
+                crate::run_pipeline(&ah, &audio_h, &pipeline_h).await;
+            });
+        } else {
+            let device = audio.device_name.lock().unwrap().clone();
+            let dev_opt = if device.is_empty() { None } else { Some(device) };
+            if let Err(e) = crate::audio::start_capture_internal(audio.inner(), dev_opt) {
+                eprintln!("Global Shortcut: failed to start recording: {}", e);
+                return;
+            }
+            app.emit("recording-started", ()).ok();
+            crate::show_bubble_window(app);
+        }
+    }).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn reload_global_shortcut(app: tauri::AppHandle) -> Result<(), String> {
+    register_global_toggle_shortcut(&app)
 }

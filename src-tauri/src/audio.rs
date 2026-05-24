@@ -61,10 +61,10 @@ pub fn start_capture_internal(
 
     let supported_config = configs_range
         .find(|c| {
-            c.min_sample_rate().0 <= SAMPLE_RATE && c.max_sample_rate().0 >= SAMPLE_RATE
+            c.min_sample_rate() <= SAMPLE_RATE && c.max_sample_rate() >= SAMPLE_RATE
         })
         .ok_or("No supported config for 16kHz found")?
-        .with_sample_rate(cpal::SampleRate(SAMPLE_RATE));
+        .with_sample_rate(SAMPLE_RATE);
 
     let channels = supported_config.channels() as usize;
     let config: cpal::StreamConfig = supported_config.into();
@@ -122,7 +122,15 @@ pub fn start_capture_internal(
         )
         .map_err(|e| e.to_string())?;
 
-    stream.play().map_err(|e| e.to_string())?;
+    // Mute master playback
+    if let Err(e) = set_master_mute(true) {
+        eprintln!("Failed to mute master playback: {}", e);
+    }
+
+    if let Err(e) = stream.play() {
+        let _ = set_master_mute(false);
+        return Err(e.to_string());
+    }
 
     *state.stream.lock().unwrap() = Some(stream);
     *state.is_recording.lock().unwrap() = true;
@@ -155,12 +163,10 @@ pub fn start_audio_capture(
 
 #[tauri::command]
 pub fn stop_audio_capture(state: State<'_, Arc<AudioState>>) -> Result<usize, String> {
-    let mut is_recording = state.is_recording.lock().unwrap();
-    if !*is_recording {
+    if !*state.is_recording.lock().unwrap() {
         return Err("Not recording".into());
     }
-    *state.stream.lock().unwrap() = None;
-    *is_recording = false;
+    stop_capture_internal(state.inner());
     Ok(state.buffer.lock().unwrap().len())
 }
 
@@ -172,4 +178,52 @@ pub fn get_amplitude(state: State<'_, Arc<AudioState>>) -> AudioAmplitude {
 #[tauri::command]
 pub fn is_recording(state: State<'_, Arc<AudioState>>) -> bool {
     *state.is_recording.lock().unwrap()
+}
+
+#[cfg(windows)]
+pub fn set_master_mute(mute: bool) -> Result<(), String> {
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CLSCTX_ALL};
+    use windows::Win32::Media::Audio::{IMMDeviceEnumerator, MMDeviceEnumerator, eRender, eConsole};
+    use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+
+    unsafe {
+        let _ = CoInitializeEx(
+            None,
+            COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE,
+        );
+
+        let enumerator: IMMDeviceEnumerator = CoCreateInstance(
+            &MMDeviceEnumerator,
+            None,
+            CLSCTX_ALL,
+        )
+        .map_err(|e| format!("CoCreateInstance IMMDeviceEnumerator failed: {}", e))?;
+
+        let device = enumerator
+            .GetDefaultAudioEndpoint(eRender, eConsole)
+            .map_err(|e| format!("GetDefaultAudioEndpoint failed: {}", e))?;
+
+        let endpoint_volume: IAudioEndpointVolume = device
+            .Activate(CLSCTX_ALL, None)
+            .map_err(|e| format!("Activate IAudioEndpointVolume failed: {}", e))?;
+
+        endpoint_volume
+            .SetMute(mute, std::ptr::null())
+            .map_err(|e| format!("SetMute failed: {}", e))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn set_master_mute(_mute: bool) -> Result<(), String> {
+    Ok(())
+}
+
+pub fn stop_capture_internal(state: &AudioState) {
+    *state.stream.lock().unwrap() = None;
+    *state.is_recording.lock().unwrap() = false;
+    
+    if let Err(e) = set_master_mute(false) {
+        eprintln!("Failed to unmute master volume: {}", e);
+    }
 }

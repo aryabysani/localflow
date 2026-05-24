@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
-import { getHistory, deleteHistoryEntry, clearHistory, DictationEntry } from "../lib/ipc";
-import { Trash2, Search, ChevronDown, ChevronUp } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { ChevronDown, ChevronUp, Clipboard, Search, Trash2 } from "lucide-react";
+import { clearHistory, deleteHistoryEntry, DictationEntry, getHistory } from "../lib/ipc";
 import { useAppStore } from "../lib/store";
 
 function formatDate(ts: string) {
@@ -16,144 +16,64 @@ function formatDate(ts: string) {
   }
 }
 
-function HistoryRow({
-  entry,
-  onDelete,
-}: {
-  entry: DictationEntry;
-  onDelete: (id: number) => void;
-}) {
+function HistoryRow({ entry, onDelete }: { entry: DictationEntry; onDelete: (id: number) => void }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div
-      style={{
-        background: "#0d0d0d",
-        border: "1px solid #1a1a1a",
-        borderRadius: "10px",
-        overflow: "hidden",
-        transition: "border-color 0.15s",
-      }}
-      onMouseEnter={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = "#2a2a2a")}
-      onMouseLeave={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = "#1a1a1a")}
-    >
-      <div
-        style={{
-          padding: "14px 16px",
-          display: "flex",
-          alignItems: "center",
-          gap: "12px",
-          cursor: "pointer",
-        }}
-        onClick={() => setExpanded(!expanded)}
-      >
-        {/* App badge */}
-        <div
-          style={{
-            background: "#1a1a2e",
-            border: "1px solid #2a2a4a",
-            borderRadius: "6px",
-            padding: "4px 8px",
-            fontSize: "11px",
-            color: "#a78bfa",
-            whiteSpace: "nowrap",
-            flexShrink: 0,
-          }}
-        >
-          {entry.app_name || "Unknown"}
-        </div>
-
-        {/* Text preview */}
-        <span
-          style={{
-            flex: 1,
-            fontSize: "14px",
-            color: "#e4e4e7",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
+    <article className="history-card">
+      <button className="history-summary" onClick={() => setExpanded((v) => !v)}>
+        <span className="badge">{entry.app_name || "Unknown"}</span>
+        <span className="truncate" style={{ fontSize: 13, color: "var(--label)" }}>
           {entry.cleaned_text}
         </span>
-
-        {/* Meta */}
-        <div style={{ display: "flex", alignItems: "center", gap: "16px", flexShrink: 0 }}>
-          <span style={{ fontSize: "11px", color: "#52525b" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span className="subtle" style={{ fontSize: 12 }}>
             {entry.word_count}w · {Math.round(entry.duration_secs)}s
           </span>
-          <span style={{ fontSize: "11px", color: "#52525b" }}>{formatDate(entry.timestamp)}</span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(entry.id);
-            }}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "#3f3f46",
-              padding: "4px",
-              borderRadius: "4px",
-              display: "flex",
-            }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "#ef4444")}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "#3f3f46")}
-          >
-            <Trash2 size={14} />
-          </button>
-          {expanded ? (
-            <ChevronUp size={14} style={{ color: "#52525b" }} />
-          ) : (
-            <ChevronDown size={14} style={{ color: "#52525b" }} />
-          )}
-        </div>
-      </div>
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </span>
+      </button>
 
-      {/* Expanded detail */}
       {expanded && (
-        <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-          <div style={{ height: "1px", background: "#1a1a1a" }} />
-          <div>
-            <div style={{ fontSize: "11px", color: "#52525b", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Cleaned
-            </div>
-            <p style={{ fontSize: "14px", color: "#d4d4d8", margin: 0, lineHeight: 1.6 }}>
-              {entry.cleaned_text}
-            </p>
+        <div style={{ padding: "0 12px 12px" }}>
+          <div style={{ borderTop: "1px solid var(--separator-soft)", paddingTop: 12 }}>
+            <div className="section-label">Cleaned transcript</div>
+            <p style={{ margin: 0, color: "var(--label)", fontSize: 14, lineHeight: "22px" }}>{entry.cleaned_text}</p>
           </div>
+
           {entry.raw_text && entry.raw_text !== entry.cleaned_text && (
-            <div>
-              <div style={{ fontSize: "11px", color: "#52525b", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Raw Transcript
-              </div>
-              <p style={{ fontSize: "13px", color: "#71717a", margin: 0, lineHeight: 1.6, fontFamily: "monospace" }}>
+            <div style={{ marginTop: 12 }}>
+              <div className="section-label">Raw transcript</div>
+              <p
+                style={{
+                  margin: 0,
+                  color: "var(--secondary)",
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                  fontSize: 12,
+                  lineHeight: "18px",
+                }}
+              >
                 {entry.raw_text}
               </p>
             </div>
           )}
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button
-              onClick={() => navigator.clipboard.writeText(entry.cleaned_text)}
-              style={{
-                background: "#1a1a1a",
-                border: "1px solid #2a2a2a",
-                borderRadius: "6px",
-                padding: "6px 12px",
-                fontSize: "12px",
-                color: "#a1a1aa",
-                cursor: "pointer",
-              }}
-            >
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+            <button className="button" onClick={() => navigator.clipboard.writeText(entry.cleaned_text)}>
+              <Clipboard size={14} />
               Copy
             </button>
-            <span style={{ fontSize: "12px", color: "#3f3f46", alignSelf: "center" }}>
-              Language: {entry.language} · {formatDate(entry.timestamp)}
+            <button className="button danger" onClick={() => onDelete(entry.id)}>
+              <Trash2 size={14} />
+              Delete
+            </button>
+            <span className="subtle" style={{ marginLeft: "auto", fontSize: 12 }}>
+              {entry.language} · {formatDate(entry.timestamp)}
             </span>
           </div>
         </div>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -166,22 +86,19 @@ export default function HistoryPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getHistory(search || undefined, 100);
-      setEntries(data);
-    } catch (e) {
-      console.error(e);
+      setEntries(await getHistory(search || undefined, 100));
     } finally {
       setLoading(false);
     }
   }, [search]);
 
   useEffect(() => {
-    load();
+    load().catch(console.error);
   }, [load, lastTranscript]);
 
   const handleDelete = async (id: number) => {
     await deleteHistoryEntry(id);
-    setEntries((prev) => prev.filter((e) => e.id !== id));
+    setEntries((prev) => prev.filter((entry) => entry.id !== id));
   };
 
   const handleClearAll = async () => {
@@ -191,87 +108,39 @@ export default function HistoryPage() {
   };
 
   return (
-    <div style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "24px" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+    <div className="page">
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#fafafa", margin: 0 }}>History</h1>
-          <p style={{ fontSize: "13px", color: "#71717a", margin: "4px 0 0" }}>
-            {entries.length} dictation{entries.length !== 1 ? "s" : ""} recorded
-          </p>
+          <p className="page-kicker">{entries.length} saved dictations</p>
+          <h2 className="page-title">History</h2>
         </div>
         {entries.length > 0 && (
-          <button
-            onClick={handleClearAll}
-            style={{
-              background: "#1a0a0a",
-              border: "1px solid #3f1a1a",
-              borderRadius: "8px",
-              padding: "8px 16px",
-              fontSize: "13px",
-              color: "#f87171",
-              cursor: "pointer",
-            }}
-          >
-            Clear All
+          <button className="button danger" onClick={handleClearAll}>
+            <Trash2 size={14} />
+            Clear all
           </button>
         )}
       </div>
 
-      {/* Search */}
-      <div style={{ position: "relative" }}>
-        <Search
-          size={16}
-          style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "#52525b" }}
-        />
-        <input
-          type="text"
-          placeholder="Search transcripts..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{
-            width: "100%",
-            background: "#111",
-            border: "1px solid #1f1f1f",
-            borderRadius: "8px",
-            padding: "10px 14px 10px 40px",
-            fontSize: "14px",
-            color: "#fafafa",
-            outline: "none",
-            boxSizing: "border-box",
-          }}
-        />
+      <div className="search-field" style={{ marginBottom: 14 }}>
+        <Search />
+        <input className="field" placeholder="Search transcripts" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
-      {/* List */}
       {loading ? (
-        <div style={{ color: "#52525b", fontSize: "14px" }}>Loading…</div>
+        <div className="glass-panel subtle">Loading history...</div>
       ) : entries.length === 0 ? (
-        <div
-          style={{
-            background: "#0a0a0a",
-            border: "1px dashed #2a2a2a",
-            borderRadius: "12px",
-            padding: "48px 24px",
-            textAlign: "center",
-          }}
-        >
-          <div style={{ fontSize: "40px", marginBottom: "12px" }}>📭</div>
-          <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#fafafa", margin: "0 0 8px" }}>
-            {search ? "No results found" : "No dictations yet"}
-          </h3>
-          <p style={{ fontSize: "13px", color: "#71717a", margin: 0 }}>
-            {search
-              ? "Try a different search term"
-              : "Your dictation history will appear here after your first recording."}
-          </p>
-        </div>
+        <section className="empty-state">
+          <Search size={38} />
+          <h3>{search ? "No matching dictations" : "No dictations yet"}</h3>
+          <p>{search ? "Try a different term." : "Recorded dictations will appear here after your first session."}</p>
+        </section>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        <section>
           {entries.map((entry) => (
             <HistoryRow key={entry.id} entry={entry} onDelete={handleDelete} />
           ))}
-        </div>
+        </section>
       )}
     </div>
   );

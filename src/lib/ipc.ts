@@ -157,3 +157,22 @@ export interface Note {
   created_at: string;
   updated_at: string;
 }
+
+export interface SystemStats {
+  process_cpu: number;
+  process_memory_mb: number;
+  system_cpu: number;
+  system_memory_pct: number;
+  estimated_power_watts: number;
+  app_state: string;
+}
+
+export async function getSystemStats() {
+  return invoke<SystemStats>("get_system_stats");
+}
+
+export async function reloadGlobalShortcut() {
+  return invoke<void>("reload_global_shortcut");
+}
+
+

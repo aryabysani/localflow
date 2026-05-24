@@ -229,12 +229,14 @@ pub async fn transcribe_audio(
             .full(params, &audio_data[..])
             .map_err(|e| format!("Transcription failed: {}", e))?;
 
-        let num_segments = state.full_n_segments().map_err(|e| e.to_string())?;
+        let num_segments = state.full_n_segments();
         let mut transcription = String::new();
 
         for i in 0..num_segments {
-            if let Ok(segment) = state.full_get_segment_text(i) {
-                transcription.push_str(&segment);
+            if let Some(segment) = state.get_segment(i) {
+                if let Ok(text) = segment.to_str() {
+                    transcription.push_str(text);
+                }
             }
         }
 

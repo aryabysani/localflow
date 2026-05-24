@@ -119,6 +119,62 @@ pub fn init_db(conn: &Connection) -> SqlResult<()> {
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
     ")?;
+    // Populating defaults
+    let defaults = [
+        ("shortcut_toggle", "Ctrl+Alt"),
+        ("keybind_keyboard_vk", "81"),
+        ("keybind_keyboard_name", "Ctrl+Q"),
+        ("keybind_keyboard_mode", "hold"),
+        ("keybind_mouse", "middle"),
+        ("keybind_mouse_name", "Middle Click"),
+        ("keybind_mouse_mode", "hold"),
+        ("track_apps", "true"),
+    ];
+
+    for (key, val) in defaults {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM settings WHERE key = ?1",
+            [key],
+            |r| r.get(0)
+        ).unwrap_or(0);
+        
+        if count == 0 {
+            let _ = conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?1, ?2)",
+                [key, val]
+            );
+        }
+    }
+
+    // Migrate old settings
+    let _ = conn.execute(
+        "UPDATE settings SET value = 'Ctrl+Alt' WHERE key = 'shortcut_toggle' AND value = 'Ctrl+Shift+Space'",
+        [],
+    );
+
+    let _ = conn.execute(
+        "UPDATE settings SET value = 'middle' WHERE key = 'keybind_mouse' AND value = 'none'",
+        [],
+    );
+    let _ = conn.execute(
+        "UPDATE settings SET value = 'Middle Click' WHERE key = 'keybind_mouse_name' AND value = 'None'",
+        [],
+    );
+
+    let has_old_kb: Result<String, _> = conn.query_row(
+        "SELECT value FROM settings WHERE key = 'keybind_keyboard'",
+        [],
+        |r| r.get(0)
+    );
+    if let Ok(old_val) = has_old_kb {
+        if old_val == "rshift_ralt" || old_val.is_empty() {
+            let _ = conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('keybind_keyboard_vk', '81')", []);
+            let _ = conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('keybind_keyboard_name', 'Ctrl+Q')", []);
+            let _ = conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('keybind_keyboard_mode', 'hold')", []);
+            let _ = conn.execute("DELETE FROM settings WHERE key = 'keybind_keyboard'", []);
+        }
+    }
+
     Ok(())
 }
 
@@ -342,11 +398,11 @@ fn calculate_streak(conn: &Connection) -> i64 {
         Err(_) => return 0,
     };
 
-    let days: Vec<(String, i64)> = stmt
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
-        .unwrap_or_else(|_| Box::new(std::iter::empty()))
-        .filter_map(|r| r.ok())
-        .collect();
+    let mapped = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)));
+    let days: Vec<(String, i64)> = match mapped {
+        Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
+        Err(_) => Vec::new(),
+    };
 
     let mut streak = 0i64;
     let today = Utc::now().format("%Y-%m-%d").to_string();
@@ -486,11 +542,10 @@ pub fn get_dictionary_prompt(db: State<'_, DbState>) -> String {
         Err(_) => return String::new(),
     };
 
-    let terms: Vec<String> = stmt
-        .query_map([], |row| row.get::<_, String>(0))
-        .unwrap_or_else(|_| Box::new(std::iter::empty()))
-        .filter_map(|r| r.ok())
-        .collect();
+    let terms: Vec<String> = match stmt.query_map([], |row| row.get::<_, String>(0)) {
+        Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
+        Err(_) => Vec::new(),
+    };
 
     if terms.is_empty() {
         String::new()

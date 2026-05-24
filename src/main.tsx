@@ -6,6 +6,11 @@ import MicBubble from "./windows/MicBubble";
 import "@fontsource-variable/geist";
 import "./styles/globals.css";
 
+if (window.location.pathname === "/bubble") {
+  document.documentElement.classList.add("bubble-document");
+  document.body.classList.add("bubble-body");
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <BrowserRouter>
