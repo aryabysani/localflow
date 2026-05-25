@@ -5962,3 +5962,19 @@ const _: () = {
 pub struct ggml_backend_buffer {
     pub _address: u8,
 }
+
+unsafe extern "C" {
+    pub fn ggml_backend_vk_get_device_count() -> ::std::os::raw::c_int;
+    pub fn ggml_backend_vk_get_device_description(
+        device: ::std::os::raw::c_int,
+        description: *mut ::std::os::raw::c_char,
+        description_size: usize,
+    );
+    pub fn ggml_backend_vk_get_device_memory(
+        device: ::std::os::raw::c_int,
+        free: *mut usize,
+        total: *mut usize,
+    );
+    pub fn ggml_backend_vk_buffer_type(dev_num: usize) -> ggml_backend_buffer_type_t;
+    pub fn ggml_backend_vk_host_buffer_type() -> ggml_backend_buffer_type_t;
+}

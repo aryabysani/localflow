@@ -1,61 +1,61 @@
 :root {
   color-scheme: light dark;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
-  --accent: #007aff;
-  --accent-strong: #0064d2;
-  --success: #34c759;
-  --danger: #ff3b30;
-  --warning: #ff9500;
-  --window: #ececec;
-  --sidebar: rgba(246, 246, 246, 0.74);
-  --panel: rgba(255, 255, 255, 0.72);
-  --panel-solid: #f7f7f8;
-  --control: rgba(255, 255, 255, 0.82);
-  --control-hover: rgba(255, 255, 255, 0.96);
-  --control-pressed: rgba(236, 236, 238, 0.96);
-  --separator: rgba(0, 0, 0, 0.12);
-  --separator-soft: rgba(0, 0, 0, 0.075);
-  --label: rgba(0, 0, 0, 0.88);
-  --secondary: rgba(0, 0, 0, 0.56);
-  --tertiary: rgba(0, 0, 0, 0.32);
-  --quaternary: rgba(0, 0, 0, 0.12);
-  --shadow-window: 0 22px 70px rgba(0, 0, 0, 0.22), 0 8px 20px rgba(0, 0, 0, 0.12), inset 0 0 0 0.5px rgba(255, 255, 255, 0.5);
-  --shadow-panel: 0 12px 34px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+  --accent: #d4af37;
+  --accent-strong: #aa8811;
+  --success: #2e7d32;
+  --danger: #c62828;
+  --warning: #ef6c00;
+  --window: #fcfbf9;
+  --sidebar: rgba(245, 242, 238, 0.82);
+  --panel: rgba(255, 255, 255, 0.85);
+  --panel-solid: #f5f2ee;
+  --control: rgba(240, 236, 230, 0.85);
+  --control-hover: rgba(235, 230, 222, 0.95);
+  --control-pressed: rgba(225, 218, 208, 0.95);
+  --separator: rgba(160, 150, 140, 0.18);
+  --separator-soft: rgba(160, 150, 140, 0.1);
+  --label: rgba(28, 25, 23, 0.95);
+  --secondary: rgba(28, 25, 23, 0.62);
+  --tertiary: rgba(28, 25, 23, 0.38);
+  --quaternary: rgba(28, 25, 23, 0.15);
+  --shadow-window: 0 22px 70px rgba(45, 40, 35, 0.16), 0 8px 20px rgba(45, 40, 35, 0.08), inset 0 0 0 0.5px rgba(255, 255, 255, 0.6);
+  --shadow-panel: 0 12px 34px rgba(45, 40, 35, 0.08), 0 2px 8px rgba(45, 40, 35, 0.04);
   --radius-window: 14px;
   --radius-panel: 10px;
   --radius-control: 6px;
-  --row-hover: rgba(0, 0, 0, 0.045);
-  --row-selected-muted: rgba(0, 0, 0, 0.08);
-  --titlebar: rgba(236, 236, 236, 0.82);
-  --desktop: #e8e8e8;
+  --row-hover: rgba(160, 150, 140, 0.06);
+  --row-selected-muted: rgba(160, 150, 140, 0.12);
+  --titlebar: rgba(245, 242, 238, 0.88);
+  --desktop: #f0ede9;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --accent: #0a84ff;
-    --accent-strong: #409cff;
-    --success: #30d158;
-    --danger: #ff453a;
-    --warning: #ff9f0a;
-    --window: #2c2c2e;
-    --sidebar: rgba(36, 36, 38, 0.78);
-    --panel: rgba(58, 58, 60, 0.58);
-    --panel-solid: #343436;
-    --control: rgba(255, 255, 255, 0.11);
-    --control-hover: rgba(255, 255, 255, 0.16);
-    --control-pressed: rgba(255, 255, 255, 0.08);
-    --separator: rgba(255, 255, 255, 0.11);
-    --separator-soft: rgba(255, 255, 255, 0.075);
-    --label: rgba(255, 255, 255, 0.92);
-    --secondary: rgba(255, 255, 255, 0.58);
-    --tertiary: rgba(255, 255, 255, 0.34);
-    --quaternary: rgba(255, 255, 255, 0.14);
-    --shadow-window: 0 22px 70px rgba(0, 0, 0, 0.35), 0 8px 20px rgba(0, 0, 0, 0.2), inset 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+    --accent: #f59e0b;
+    --accent-strong: #d97706;
+    --success: #10b981;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --window: #0f0f11;
+    --sidebar: rgba(20, 20, 23, 0.82);
+    --panel: rgba(30, 30, 35, 0.58);
+    --panel-solid: #1c1c1f;
+    --control: rgba(255, 255, 255, 0.08);
+    --control-hover: rgba(255, 255, 255, 0.12);
+    --control-pressed: rgba(255, 255, 255, 0.05);
+    --separator: rgba(255, 255, 255, 0.09);
+    --separator-soft: rgba(255, 255, 255, 0.05);
+    --label: rgba(244, 244, 245, 0.95);
+    --secondary: rgba(161, 161, 170, 0.7);
+    --tertiary: rgba(113, 113, 122, 0.45);
+    --quaternary: rgba(63, 63, 70, 0.2);
+    --shadow-window: 0 22px 70px rgba(0, 0, 0, 0.45), 0 8px 20px rgba(0, 0, 0, 0.35), inset 0 0 0 0.5px rgba(255, 255, 255, 0.06);
     --shadow-panel: 0 12px 36px rgba(0, 0, 0, 0.24), 0 2px 8px rgba(0, 0, 0, 0.18);
-    --row-hover: rgba(255, 255, 255, 0.07);
-    --row-selected-muted: rgba(255, 255, 255, 0.11);
-    --titlebar: rgba(44, 44, 46, 0.82);
-    --desktop: #1c1c1e;
+    --row-hover: rgba(255, 255, 255, 0.06);
+    --row-selected-muted: rgba(255, 255, 255, 0.1);
+    --titlebar: rgba(20, 20, 23, 0.88);
+    --desktop: #08080a;
   }
 }
 
@@ -1160,4 +1160,106 @@ textarea {
   .select {
     width: 100% !important;
   }
+}
+
+/* Premium Banners */
+.banner-card {
+  position: relative;
+  width: 100%;
+  border-radius: 12px;
+  background-size: cover;
+  background-position: center;
+  padding: 26px 28px;
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-panel);
+  margin-bottom: 22px;
+}
+
+.banner-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(1.5px);
+  z-index: 1;
+}
+
+.banner-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.banner-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  transition: background 0.15s ease;
+}
+
+.banner-close:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.banner-title {
+  margin: 0;
+  font-family: Georgia, Garamond, serif;
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: -0.2px;
+  line-height: 1.25;
+}
+
+.banner-title em {
+  font-style: italic;
+  font-family: Georgia, Garamond, serif;
+}
+
+.banner-desc {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.88);
+  max-width: 80%;
+  font-weight: 400;
+}
+
+.banner-desc strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.banner-tag {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #ffffff;
 }

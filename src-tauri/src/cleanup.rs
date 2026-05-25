@@ -74,40 +74,92 @@ fn sentence_case(text: &str) -> String {
 pub fn build_cleanup_prompt(raw_text: &str, app_exe: &str, style_note: &str) -> String {
     let context = app_context(app_exe);
     let context_hint = match context {
-        "casual" => "Target: casual chat app (Slack/Discord/WhatsApp). Use contractions, informal tone, lowercase OK, keep it short.",
-        "formal" => "Target: email/document app (Outlook/Word). Use formal complete sentences, proper greeting/sign-off if dictated.",
-        "code" => "Target: code editor/terminal. Preserve exact wording — DO NOT rephrase or add punctuation to code/command text.",
-        "notes" => "Target: notes app (Notion/Obsidian). Polished long-form prose, preserve structure.",
-        _ => "Target: general app. Neutral, polished, professional prose.",
+        "casual" => "casual chat style (Slack/Discord/WhatsApp). Keep it concise, lowercase is fine, use contractions.",
+        "formal" => "formal document/email style (Outlook/Word). Use complete sentences, formal tone.",
+        "code" => "code/terminal style. Keep exactly as is, do not add punctuation.",
+        "notes" => "notes style (Notion/Obsidian). Clear, organized prose.",
+        _ => "clean, natural dictation style.",
+    };
+
+    let style = if style_note.is_empty() {
+        "".to_string()
+    } else {
+        format!("Additional style constraint: {}\n", style_note)
     };
 
     format!(
-        r#"You are a dictation cleanup engine. {context_hint}
-{style_note}
+        r#"You are an expert voice dictation post-processor.
+Task: Clean up the raw voice transcript to make it clean, natural, and readable.
+Target App Context: {context_hint}
+{style}
 Rules:
-1. Remove filler words: um, uh, like, you know, sort of, kind of, I mean
-2. Handle self-corrections: "meet Tuesday, wait Wednesday" → "meet Wednesday"
-3. Add proper punctuation and capitalization
-4. Convert spoken lists ("first ... second ... third") to "1. ... 2. ... 3. ..."
-5. Adapt tone to target app as described above
-6. Preserve speaker's vocabulary and meaning exactly
-7. Output ONLY the cleaned text — no preamble, no explanation, no quotes.
+- Remove filler words (um, uh, like, you know, sort of, kind of, i mean, etc.)
+- Resolve self-corrections (e.g., "went to the office no I mean the park" -> "went to the park")
+- Fix capitalization and basic punctuation.
+- Output ONLY the final cleaned text. Do NOT include preambles, explanations, or quotes.
 
-Raw transcript: {raw_text}"#,
+Examples:
+Input: "so um, yesterday i went to the office no i mean i went to the park and like it was raining uh you know"
+Output: "Yesterday I went to the park and it was raining."
+
+Input: "first we need to buy milk wait no water and then bread"
+Output: "First we need to buy water and then bread."
+
+Input: "{raw_text}"
+Output: "#,
         context_hint = context_hint,
-        style_note = if style_note.is_empty() { "" } else { style_note },
+        style = style,
         raw_text = raw_text,
     )
 }
 
-/// Main cleanup command — uses regex fallback (LLM not bundled in this build)
+use tauri::{AppHandle, Manager};
+
+/// Main cleanup command — uses LLM if enabled, otherwise falls back to regex
 #[tauri::command]
 pub fn cleanup_text(
+    app: AppHandle,
     raw_text: String,
     app_exe: String,
 ) -> Result<String, String> {
-    // For now, use regex cleanup as the reliable fallback
-    // LLM integration requires llama.cpp to be compiled and model downloaded
+    let llm_enabled = {
+        if let Some(db_state) = app.try_state::<crate::db::DbState>() {
+            let conn = db_state.0.lock().unwrap();
+            let val: Result<String, _> = conn.query_row(
+                "SELECT value FROM settings WHERE key = 'llm_enabled'",
+                [],
+                |row| row.get(0),
+            );
+            val.unwrap_or_else(|_| "false".to_string()) == "true"
+        } else {
+            false
+        }
+    };
+
+    if llm_enabled && crate::llm::is_llama_cli_installed(app.clone()) {
+        let system_prompt = {
+            if let Some(db_state) = app.try_state::<crate::db::DbState>() {
+                let conn = db_state.0.lock().unwrap();
+                let val: Result<String, _> = conn.query_row(
+                    "SELECT value FROM settings WHERE key = 'llm_system_prompt'",
+                    [],
+                    |row| row.get(0),
+                );
+                val.unwrap_or_else(|_| "".to_string())
+            } else {
+                "".to_string()
+            }
+        };
+
+        let prompt = build_cleanup_prompt(&raw_text, &app_exe, &system_prompt);
+        match crate::llm::run_inference(&app, &prompt) {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                eprintln!("LLM Cleanup failed: {}. Falling back to regex.", e);
+            }
+        }
+    }
+
     let cleaned = regex_cleanup(&raw_text);
     Ok(cleaned)
 }
@@ -115,10 +167,55 @@ pub fn cleanup_text(
 /// Command mode: transform selected text with an instruction
 #[tauri::command]  
 pub fn command_mode_transform(
+    app: AppHandle,
     selected_text: String,
     instruction: String,
     app_exe: String,
 ) -> Result<String, String> {
+    let llm_enabled = {
+        if let Some(db_state) = app.try_state::<crate::db::DbState>() {
+            let conn = db_state.0.lock().unwrap();
+            let val: Result<String, _> = conn.query_row(
+                "SELECT value FROM settings WHERE key = 'llm_enabled'",
+                [],
+                |row| row.get(0),
+            );
+            val.unwrap_or_else(|_| "false".to_string()) == "true"
+        } else {
+            false
+        }
+    };
+
+    if llm_enabled && crate::llm::is_llama_cli_installed(app.clone()) {
+        let context = app_context(&app_exe);
+        let prompt = format!(
+            r#"You are a text transformation engine.
+Task: Modify the original text according to the instructions.
+Target App Context: {context} (Application: {app_exe})
+Instructions: {instruction}
+Respond ONLY with the final modified text — no preamble, no explanations, no wrapping quotes.
+
+Original text:
+"""
+{selected_text}
+"""
+
+Modified text:
+"""#,
+            context = context,
+            app_exe = app_exe,
+            instruction = instruction,
+            selected_text = selected_text
+        );
+
+        match crate::llm::run_inference(&app, &prompt) {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                eprintln!("LLM Command mode transform failed: {}. Falling back to regex rules.", e);
+            }
+        }
+    }
+
     // Without LLM, do basic transformations based on common instructions
     let lower_instruction = instruction.to_lowercase();
     
@@ -140,7 +237,7 @@ pub fn command_mode_transform(
             .collect::<Vec<_>>()
             .join("\n")
     } else if lower_instruction.contains("formal") || lower_instruction.contains("professional") {
-        // Basic formality: capitalize, ensure periods
+        // Basic formality
         regex_cleanup(&selected_text)
     } else if lower_instruction.contains("uppercase") || lower_instruction.contains("caps") {
         selected_text.to_uppercase()

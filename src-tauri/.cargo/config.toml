@@ -1,0 +1,5 @@
+[build]
+target-dir = "C:\\t"
+
+[env]
+VULKAN_SDK = "C:\\VulkanSDK\\1.4.350.0"

@@ -242,6 +242,14 @@ function StreakCalendar({ wordsPerDay, currentStreak, longestStreak }: { wordsPe
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showBanner, setShowBanner] = useState(() => {
+    return localStorage.getItem("flowlocal_dashboard_banner_closed") !== "true";
+  });
+
+  const handleCloseBanner = () => {
+    setShowBanner(false);
+    localStorage.setItem("flowlocal_dashboard_banner_closed", "true");
+  };
   const [trackApps, setTrackApps] = useState(true);
   const [sysStats, setSysStats] = useState<SystemStats | null>(null);
   const [shortcutToggle, setShortcutToggle] = useState("Ctrl+Alt");
@@ -383,6 +391,25 @@ export default function Dashboard() {
           to { opacity: 1; transform: scale(1.1); }
         }
       `}</style>
+
+      {showBanner && (
+        <div className="banner-card" style={{ backgroundImage: "url('/red extra.png')" }}>
+          <button className="banner-close" onClick={handleCloseBanner} aria-label="Close banner">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1 1l8 8M9 1L1 9"/></svg>
+          </button>
+          <div className="banner-content">
+            <h2 className="banner-title">Flow writes the way <em>you</em> think.</h2>
+            <p className="banner-desc">
+              Your voice, polished in real-time. Automatically stripping filler words, resolving self-corrections, and adapting to your active window target.
+            </p>
+            <div className="banner-actions">
+              <span className="banner-tag">Whisper Speech-to-Text</span>
+              <span className="banner-tag">Offline Formatting</span>
+              <span className="banner-tag">Zero Telemetry</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="page-header">
         <div>

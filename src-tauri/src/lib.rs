@@ -5,6 +5,8 @@ mod hook;
 mod inject;
 mod pipeline;
 mod whisper;
+mod earcon;
+mod llm;
 
 use std::sync::Arc;
 use tauri::{
@@ -145,6 +147,11 @@ pub fn run() {
             // Cleanup
             cleanup::cleanup_text,
             cleanup::command_mode_transform,
+            // LLM
+            llm::list_llm_models,
+            llm::is_llama_cli_installed,
+            llm::download_llama_cli,
+            llm::download_llm_model,
             // Inject
             inject::inject_text,
             inject::inject_text_clipboard,
@@ -319,7 +326,13 @@ pub async fn run_pipeline(
         return;
     }
 
-    let cleaned = cleanup::regex_cleanup(&raw);
+    let cleaned = match cleanup::cleanup_text(app.clone(), raw.clone(), app_exe.clone()) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Cleanup error: {}, falling back to regex", e);
+            cleanup::regex_cleanup(&raw)
+        }
+    };
 
     let is_cmd = {
         let mut cmd = pipeline.is_command_mode.lock().unwrap();
@@ -335,7 +348,7 @@ pub async fn run_pipeline(
             *txt = String::new(); // Reset
             val
         };
-        match cleanup::command_mode_transform(selected, cleaned.clone(), app_exe.clone()) {
+        match cleanup::command_mode_transform(app.clone(), selected, cleaned.clone(), app_exe.clone()) {
             Ok(transformed) => transformed,
             Err(e) => {
                 eprintln!("Command transform failed: {}", e);
@@ -353,22 +366,30 @@ pub async fn run_pipeline(
     if !privacy {
         if let Some(db_state) = app.try_state::<DbState>() {
             let conn = db_state.0.lock().unwrap();
-            let track_apps: String = conn.query_row(
-                "SELECT value FROM settings WHERE key = 'track_apps'",
+            let save_history: String = conn.query_row(
+                "SELECT value FROM settings WHERE key = 'save_history'",
                 [],
                 |row| row.get(0),
             ).unwrap_or_else(|_| "true".to_string());
 
-            let (final_app_name, final_app_exe) = if track_apps == "false" {
-                ("".to_string(), "".to_string())
-            } else {
-                (app_name.clone(), app_exe.clone())
-            };
+            if save_history == "true" {
+                let track_apps: String = conn.query_row(
+                    "SELECT value FROM settings WHERE key = 'track_apps'",
+                    [],
+                    |row| row.get(0),
+                ).unwrap_or_else(|_| "true".to_string());
 
-            let _ = conn.execute(
-                "INSERT INTO dictation_history (app_name, app_exe, raw_text, cleaned_text, word_count, duration_secs, language) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                rusqlite::params![final_app_name, final_app_exe, raw, text_to_inject, word_count, duration_secs, language],
-            );
+                let (final_app_name, final_app_exe) = if track_apps == "false" {
+                    ("".to_string(), "".to_string())
+                } else {
+                    (app_name.clone(), app_exe.clone())
+                };
+
+                let _ = conn.execute(
+                    "INSERT INTO dictation_history (app_name, app_exe, raw_text, cleaned_text, word_count, duration_secs, language) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    rusqlite::params![final_app_name, final_app_exe, raw, text_to_inject, word_count, duration_secs, language],
+                );
+            }
         }
     }
 

@@ -40,6 +40,14 @@ export default function ShortcutsPage() {
   const [shortcutToggle, setShortcutToggle] = useState("Ctrl+Alt");
   const [keybindKeyboardName, setKeybindKeyboardName] = useState("Ctrl+Q");
   const [keybindKeyboardMode, setKeybindKeyboardMode] = useState("hold");
+  const [showBanner, setShowBanner] = useState(() => {
+    return localStorage.getItem("flowlocal_shortcuts_banner_closed") !== "true";
+  });
+
+  const handleCloseBanner = () => {
+    setShowBanner(false);
+    localStorage.setItem("flowlocal_shortcuts_banner_closed", "true");
+  };
   
   const [keybindMouse, setKeybindMouse] = useState("middle");
   const [keybindMouseName, setKeybindMouseName] = useState("Middle Click");
@@ -313,6 +321,25 @@ export default function ShortcutsPage() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {showBanner && (
+        <div className="banner-card" style={{ backgroundImage: "url('/Shortcuts Background.png')" }}>
+          <button className="banner-close" onClick={handleCloseBanner} aria-label="Close banner">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1 1l8 8M9 1L1 9"/></svg>
+          </button>
+          <div className="banner-content">
+            <h2 className="banner-title">The keys <em>you</em> shouldn't have to re-type.</h2>
+            <p className="banner-desc">
+              Configure instant global shortcuts and mouse triggers to instantly control voice recording across any active application.
+            </p>
+            <div className="banner-actions">
+              <span className="banner-tag">Ctrl+Alt Toggle</span>
+              <span className="banner-tag">Custom Keyboard Hold</span>
+              <span className="banner-tag">Mouse Button Triggers</span>
+            </div>
           </div>
         </div>
       )}

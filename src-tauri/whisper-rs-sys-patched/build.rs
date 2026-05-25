@@ -116,7 +116,8 @@ fn main() {
         });
     }
 
-    if env::var("WHISPER_DONT_GENERATE_BINDINGS").is_ok() {
+    let use_bundled = env::var("WHISPER_DONT_GENERATE_BINDINGS").is_ok() || !has_clang();
+    if use_bundled {
         let _: u64 = std::fs::copy("src/bindings.rs", out.join("bindings.rs"))
             .expect("Failed to copy bindings.rs");
     } else {
@@ -392,4 +393,22 @@ fn get_whisper_cpp_version(whisper_root: &std::path::Path) -> std::io::Result<Op
     }
 
     Ok(None)
+}
+
+fn has_clang() -> bool {
+    if env::var("LIBCLANG_PATH").is_ok() {
+        return true;
+    }
+    if let Ok(path) = env::var("PATH") {
+        for p in env::split_paths(&path) {
+            let clang_exe = p.join("clang.exe");
+            let clang = p.join("clang");
+            let libclang_dll = p.join("libclang.dll");
+            let clang_dll = p.join("clang.dll");
+            if clang_exe.exists() || clang.exists() || libclang_dll.exists() || clang_dll.exists() {
+                return true;
+            }
+        }
+    }
+    false
 }

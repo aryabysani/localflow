@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Globe, Keyboard, Mic, MonitorCheck, Shield } from "lucide-react";
+import { Globe, Keyboard, Mic, MonitorCheck, Shield, History } from "lucide-react";
 import { listAudioDevices, setSetting, getSetting } from "../lib/ipc";
 import { useAppStore } from "../lib/store";
 import { Link } from "react-router-dom";
@@ -69,6 +69,7 @@ export default function SettingsPage() {
   const { privacyMode, togglePrivacy, language, setLanguage } = useAppStore();
   const [devices, setDevices] = useState<string[]>([]);
   const [selectedDevice, setSelectedDevice] = useState("");
+  const [saveHistory, setSaveHistory] = useState(true);
   
   // Custom Dynamic Shortcuts Settings State
   const [shortcutToggle, setShortcutToggle] = useState("Ctrl+Alt");
@@ -90,6 +91,9 @@ export default function SettingsPage() {
     const loadSettings = async () => {
       const toggle = await getSetting("shortcut_toggle");
       if (toggle) setShortcutToggle(toggle);
+
+      const saveHist = await getSetting("save_history");
+      if (saveHist) setSaveHistory(saveHist === "true");
 
       const kbName = await getSetting("keybind_keyboard_name");
       const kbMode = await getSetting("keybind_keyboard_mode");
@@ -193,8 +197,18 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Privacy">
-        <SettingRow icon={Shield} label="Privacy mode" description="Do not store transcripts in local history">
+        <SettingRow icon={Shield} label="Privacy mode" description="Temporary private session: do not store transcripts in local history">
           <Switch checked={privacyMode} onChange={togglePrivacy} />
+        </SettingRow>
+        <SettingRow icon={History} label="Save dictation history" description="Permanently save transcripts to local SQLite database">
+          <Switch
+            checked={saveHistory}
+            onChange={() => {
+              const next = !saveHistory;
+              setSaveHistory(next);
+              save("save_history", next ? "true" : "false");
+            }}
+          />
         </SettingRow>
       </Section>
 

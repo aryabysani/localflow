@@ -129,6 +129,10 @@ pub fn init_db(conn: &Connection) -> SqlResult<()> {
         ("keybind_mouse_name", "Middle Click"),
         ("keybind_mouse_mode", "hold"),
         ("track_apps", "true"),
+        ("save_history", "true"),
+        ("llm_active_model", "Llama-3.2-1B-Instruct-Q4_K_M.gguf"),
+        ("llm_enabled", "false"),
+        ("llm_system_prompt", ""),
     ];
 
     for (key, val) in defaults {
@@ -194,8 +198,14 @@ pub fn save_dictation(
     let conn = db.0.lock().unwrap();
     let word_count = cleaned_text.split_whitespace().count() as i64;
 
-    if privacy_mode {
-        return Ok(-1); // Don't persist in privacy mode
+    let save_history: String = conn.query_row(
+        "SELECT value FROM settings WHERE key = 'save_history'",
+        [],
+        |row| row.get(0),
+    ).unwrap_or_else(|_| "true".to_string());
+
+    if privacy_mode || save_history == "false" {
+        return Ok(-1); // Don't persist in privacy mode or when history saving is disabled
     }
 
     conn.execute(

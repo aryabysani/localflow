@@ -175,4 +175,32 @@ export async function reloadGlobalShortcut() {
   return invoke<void>("reload_global_shortcut");
 }
 
+// LLM settings types and wrappers
+export interface LlmModelInfo {
+  id: string;
+  name: string;
+  filename: string;
+  url: string;
+  size_mb: number;
+  description: string;
+  downloaded: boolean;
+  size_on_disk: number;
+}
+
+export async function listLlmModels() {
+  return invoke<LlmModelInfo[]>("list_llm_models");
+}
+
+export async function isLlamaCliInstalled() {
+  return invoke<boolean>("is_llama_cli_installed");
+}
+
+export async function downloadLlamaCli() {
+  return invoke<string>("download_llama_cli");
+}
+
+export async function downloadLlmModel(modelId: string) {
+  return invoke<string>("download_llm_model", { modelId });
+}
+
 

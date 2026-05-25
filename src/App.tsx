@@ -9,7 +9,7 @@ import {
   Mic,
   Settings,
   Shield,
-  StickyNote,
+  Sparkles,
 } from "lucide-react";
 import { useEffect } from "react";
 import { useAppStore } from "./lib/store";
@@ -19,27 +19,27 @@ import Dashboard from "./routes/Dashboard";
 import DictionaryPage from "./routes/Dictionary";
 import HistoryPage from "./routes/History";
 import ModelsPage from "./routes/Models";
-import NotesPage from "./routes/Notes";
 import SettingsPage from "./routes/Settings";
 import ShortcutsPage from "./routes/Shortcuts";
+import LLMSettingsPage from "./routes/LLMSettings";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/notes", icon: StickyNote, label: "Notes" },
   { to: "/history", icon: History, label: "History" },
   { to: "/dictionary", icon: BookOpen, label: "Dictionary" },
   { to: "/shortcuts", icon: Keyboard, label: "Shortcuts" },
   { to: "/models", icon: Download, label: "Models" },
+  { to: "/llm", icon: Sparkles, label: "Local LLM" },
   { to: "/settings", icon: Settings, label: "Settings" },
   { to: "/about", icon: Info, label: "About" },
 ];
 
 function titleForPath(pathname: string) {
-  if (pathname.startsWith("/notes")) return ["Notes", "Dictate into local drafts"];
   if (pathname.startsWith("/history")) return ["History", "Recent dictations and transcripts"];
   if (pathname.startsWith("/dictionary")) return ["Dictionary", "Vocabulary hints for Whisper"];
   if (pathname.startsWith("/shortcuts")) return ["Shortcuts", "Keyboard and mouse triggers"];
   if (pathname.startsWith("/models")) return ["Models", "Local speech recognition models"];
+  if (pathname.startsWith("/llm")) return ["Local LLM", "Offline text formatting and cleanup"];
   if (pathname.startsWith("/settings")) return ["Settings", "Preferences for local dictation"];
   if (pathname.startsWith("/about")) return ["About", "Privacy-first voice to text"];
   return ["Dashboard", "Voice productivity at a glance"];
@@ -64,11 +64,7 @@ export default function App() {
   return (
     <div className="mac-window">
       <aside className="mac-sidebar">
-        <div className="mac-traffic" aria-hidden="true">
-          <span className="traffic-dot close" />
-          <span className="traffic-dot minimize" />
-          <span className="traffic-dot zoom" />
-        </div>
+
 
         <div className="brand-lockup">
           <div className="brand-icon">
@@ -82,7 +78,7 @@ export default function App() {
 
         <nav className="source-list" aria-label="Primary">
           <div className="source-section-label">Library</div>
-          {navItems.slice(0, 4).map(({ to, icon: Icon, label }) => (
+          {navItems.slice(0, 3).map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
@@ -95,7 +91,7 @@ export default function App() {
           ))}
 
           <div className="source-section-label">Preferences</div>
-          {navItems.slice(4).map(({ to, icon: Icon, label }) => (
+          {navItems.slice(3).map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
@@ -133,11 +129,11 @@ export default function App() {
         <main className="page-scroll">
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/notes" element={<NotesPage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/dictionary" element={<DictionaryPage />} />
             <Route path="/shortcuts" element={<ShortcutsPage />} />
             <Route path="/models" element={<ModelsPage />} />
+            <Route path="/llm" element={<LLMSettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/about" element={<AboutPage />} />
           </Routes>

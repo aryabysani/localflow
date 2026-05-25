@@ -355,6 +355,7 @@ fn cancel_recording(
     pipeline: &crate::pipeline::PipelineState,
 ) {
     println!("Cancelling recording...");
+    crate::earcon::play_cancel_sound();
     {
         crate::audio::stop_capture_internal(audio);
         audio.buffer.lock().unwrap().clear();
@@ -407,6 +408,8 @@ fn start_command_mode(
             return;
         }
 
+        crate::earcon::play_start_sound();
+
         app_clone.emit("recording-started", ()).ok();
         crate::show_bubble_window(&app_clone);
     });
@@ -436,6 +439,8 @@ fn start_hold_recording(
             crate::audio::stop_capture_internal(&audio);
             return;
         }
+
+        crate::earcon::play_start_sound();
 
         app.emit("recording-started", ()).ok();
         crate::show_bubble_window(&app);
@@ -472,6 +477,8 @@ fn toggle_recording(
                 return;
             }
 
+            crate::earcon::play_start_sound();
+
             app.emit("recording-started", ()).ok();
             crate::show_bubble_window(&app);
         });
@@ -486,6 +493,8 @@ fn stop_and_transcribe(
     *RECORD_TRIGGER.lock().unwrap() = None;
     *RALT_HELD_RECORDING.lock().unwrap() = false;
     *MOUSE_HELD_RECORDING.lock().unwrap() = false;
+
+    crate::earcon::play_stop_sound();
 
     tauri::async_runtime::spawn(async move {
         println!("Stopping recording. Transcribing...");
