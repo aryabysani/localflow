@@ -1,6 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+
 :root {
   color-scheme: light dark;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   --accent: #d4af37;
   --accent-strong: #aa8811;
   --success: #2e7d32;
@@ -1220,16 +1222,16 @@ textarea {
 
 .banner-title {
   margin: 0;
-  font-family: Georgia, Garamond, serif;
-  font-size: 26px;
+  font-family: "Instrument Serif", Georgia, Garamond, serif;
+  font-size: 34px;
   font-weight: 400;
   letter-spacing: -0.2px;
-  line-height: 1.25;
+  line-height: 1.15;
 }
 
 .banner-title em {
   font-style: italic;
-  font-family: Georgia, Garamond, serif;
+  font-family: "Instrument Serif", Georgia, Garamond, serif;
 }
 
 .banner-desc {
