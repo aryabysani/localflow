@@ -243,12 +243,12 @@ export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [showBanner, setShowBanner] = useState(() => {
-    return localStorage.getItem("flowlocal_dashboard_banner_closed") !== "true";
+    return localStorage.getItem("localflow_dashboard_banner_closed") !== "true";
   });
 
   const handleCloseBanner = () => {
     setShowBanner(false);
-    localStorage.setItem("flowlocal_dashboard_banner_closed", "true");
+    localStorage.setItem("localflow_dashboard_banner_closed", "true");
   };
   const [trackApps, setTrackApps] = useState(true);
   const [sysStats, setSysStats] = useState<SystemStats | null>(null);

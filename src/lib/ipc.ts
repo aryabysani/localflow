@@ -30,6 +30,10 @@ export async function setActiveModel(filename: string) {
   return invoke<void>("set_active_model", { filename });
 }
 
+export async function deleteModel(modelId: string) {
+  return invoke<void>("delete_model", { modelId });
+}
+
 export async function getDashboardStats() {
   return invoke<DashboardStats>("get_dashboard_stats");
 }
@@ -105,6 +109,7 @@ export interface ModelInfo {
   description: string;
   downloaded: boolean;
   size_on_disk: number;
+  is_active?: boolean;
 }
 
 export interface DashboardStats {
@@ -185,6 +190,7 @@ export interface LlmModelInfo {
   description: string;
   downloaded: boolean;
   size_on_disk: number;
+  is_active?: boolean;
 }
 
 export async function listLlmModels() {

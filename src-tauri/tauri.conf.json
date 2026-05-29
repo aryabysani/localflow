@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "FlowLocal",
+  "productName": "LocalFlow",
   "version": "0.1.0",
-  "identifier": "com.flowlocal.desktop",
+  "identifier": "com.localflow.desktop",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "FlowLocal",
+        "title": "LocalFlow",
         "width": 1100,
         "height": 720,
         "minWidth": 900,
@@ -26,13 +26,14 @@
       {
         "label": "bubble",
         "title": "",
-        "width": 320,
-        "height": 88,
+        "width": 240,
+        "height": 100,
         "x": 800,
         "y": 900,
         "visible": false,
         "decorations": false,
         "transparent": true,
+        "shadow": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false,

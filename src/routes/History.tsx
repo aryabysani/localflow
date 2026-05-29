@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Clipboard, Search, Trash2 } from "lucide-react";
-import { clearHistory, deleteHistoryEntry, DictationEntry, getHistory } from "../lib/ipc";
+import { clearHistory, deleteHistoryEntry, DictationEntry, getHistory, getSetting, setSetting } from "../lib/ipc";
 import { useAppStore } from "../lib/store";
 
 function formatDate(ts: string) {
@@ -23,8 +23,8 @@ function HistoryRow({ entry, onDelete }: { entry: DictationEntry; onDelete: (id:
     <article className="history-card">
       <button className="history-summary" onClick={() => setExpanded((v) => !v)}>
         <span className="badge">{entry.app_name || "Unknown"}</span>
-        <span className="truncate" style={{ fontSize: 13, color: "var(--label)" }}>
-          {entry.cleaned_text}
+        <span className="truncate" style={{ fontSize: 13, color: entry.cleaned_text ? "var(--label)" : "var(--tertiary)", fontStyle: entry.cleaned_text ? "normal" : "italic" }}>
+          {entry.cleaned_text || "(Transcript omitted - history disabled)"}
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span className="subtle" style={{ fontSize: 12 }}>
@@ -38,7 +38,9 @@ function HistoryRow({ entry, onDelete }: { entry: DictationEntry; onDelete: (id:
         <div style={{ padding: "0 12px 12px" }}>
           <div style={{ borderTop: "1px solid var(--separator-soft)", paddingTop: 12 }}>
             <div className="section-label">Cleaned transcript</div>
-            <p style={{ margin: 0, color: "var(--label)", fontSize: 14, lineHeight: "22px" }}>{entry.cleaned_text}</p>
+            <p style={{ margin: 0, color: entry.cleaned_text ? "var(--label)" : "var(--tertiary)", fontSize: 14, lineHeight: "22px", fontStyle: entry.cleaned_text ? "normal" : "italic" }}>
+              {entry.cleaned_text || "(Text content was not saved because history saving was disabled for this session. Only word count and duration statistics were recorded.)"}
+            </p>
           </div>
 
           {entry.raw_text && entry.raw_text !== entry.cleaned_text && (
@@ -59,7 +61,7 @@ function HistoryRow({ entry, onDelete }: { entry: DictationEntry; onDelete: (id:
           )}
 
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-            <button className="button" onClick={() => navigator.clipboard.writeText(entry.cleaned_text)}>
+            <button className="button" disabled={!entry.cleaned_text} onClick={() => entry.cleaned_text && navigator.clipboard.writeText(entry.cleaned_text)}>
               <Clipboard size={14} />
               Copy
             </button>
@@ -81,7 +83,17 @@ export default function HistoryPage() {
   const [entries, setEntries] = useState<DictationEntry[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [saveHistoryEnabled, setSaveHistoryEnabled] = useState(true);
   const { lastTranscript } = useAppStore();
+
+  const loadSetting = useCallback(async () => {
+    try {
+      const val = await getSetting("save_history");
+      setSaveHistoryEnabled(val !== "false");
+    } catch (e) {
+      console.error("Failed to load save_history setting:", e);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -93,8 +105,15 @@ export default function HistoryPage() {
   }, [search]);
 
   useEffect(() => {
+    loadSetting().catch(console.error);
     load().catch(console.error);
-  }, [load, lastTranscript]);
+  }, [load, loadSetting, lastTranscript]);
+
+  const handleToggleSaveHistory = async () => {
+    const nextVal = !saveHistoryEnabled;
+    setSaveHistoryEnabled(nextVal);
+    await setSetting("save_history", nextVal ? "true" : "false");
+  };
 
   const handleDelete = async (id: number) => {
     await deleteHistoryEntry(id);
@@ -121,6 +140,22 @@ export default function HistoryPage() {
           </button>
         )}
       </div>
+
+      <section className="glass-panel" style={{ marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px" }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Save Transcripts in History</h3>
+          <p className="row-desc" style={{ margin: "2px 0 0 0", fontSize: 11.5 }}>
+            When disabled, only speech word counts and durations (stats) are recorded. Transcripts are discarded immediately.
+          </p>
+        </div>
+        <button
+          className={`switch ${saveHistoryEnabled ? "on" : ""}`}
+          onClick={handleToggleSaveHistory}
+          aria-pressed={saveHistoryEnabled}
+        >
+          <span />
+        </button>
+      </section>
 
       <div className="search-field" style={{ marginBottom: 14 }}>
         <Search />

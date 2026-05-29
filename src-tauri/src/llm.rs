@@ -1,8 +1,10 @@
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use tauri::{AppHandle, Manager};
+use std::io::Write;
+use tauri::{AppHandle, Manager, Emitter};
 use serde::{Deserialize, Serialize};
+use futures_util::StreamExt;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LlmModelInfo {
@@ -59,6 +61,7 @@ pub fn get_llm_models_dir(app: &AppHandle) -> Result<PathBuf, String> {
 pub fn list_llm_models(app: AppHandle) -> Vec<serde_json::Value> {
     let models = available_llm_models();
     let models_dir = get_llm_models_dir(&app).unwrap_or_default();
+    let active_filename = get_llm_setting(&app, "llm_active_model", "Llama-3.2-1B-Instruct-Q4_K_M.gguf");
 
     models
         .iter()
@@ -79,6 +82,7 @@ pub fn list_llm_models(app: AppHandle) -> Vec<serde_json::Value> {
                 "description": m.description,
                 "downloaded": downloaded,
                 "size_on_disk": size_on_disk,
+                "is_active": m.filename == active_filename,
             })
         })
         .collect()
@@ -121,13 +125,49 @@ pub async fn download_llama_cli(app: AppHandle) -> Result<String, String> {
         .await
         .map_err(|e| format!("Download failed: {}", e))?;
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
+    let total_size = response
+        .content_length()
+        .ok_or_else(|| "Failed to get content length".to_string())?;
 
-    fs::write(&dest_zip, &bytes)
+    let mut file = std::fs::File::create(&dest_zip)
         .map_err(|e| format!("Failed to save zip file: {}", e))?;
+
+    let mut downloaded: u64 = 0;
+    let mut last_emit = std::time::Instant::now();
+    let mut stream = response.bytes_stream();
+
+    while let Some(item) = stream.next().await {
+        let chunk = item.map_err(|e| {
+            let _ = fs::remove_file(&dest_zip);
+            format!("Error while downloading: {}", e)
+        })?;
+
+        file.write_all(&chunk).map_err(|e| {
+            let _ = fs::remove_file(&dest_zip);
+            format!("Failed to write chunk: {}", e)
+        })?;
+
+        downloaded += chunk.len() as u64;
+        let percent = (downloaded * 100 / total_size) as u32;
+
+        if last_emit.elapsed().as_millis() > 100 || percent == 100 {
+            app.emit(
+                "download-progress",
+                serde_json::json!({
+                    "id": "llama-cli",
+                    "progress": percent,
+                }),
+            )
+            .ok();
+            last_emit = std::time::Instant::now();
+        }
+    }
+
+    file.sync_all().map_err(|e| {
+        let _ = fs::remove_file(&dest_zip);
+        format!("Failed to sync zip file: {}", e)
+    })?;
+    drop(file);
 
     println!("Extracting llama.cpp zip using system tar...");
     
@@ -183,15 +223,61 @@ pub async fn download_llm_model(app: AppHandle, model_id: String) -> Result<Stri
         .await
         .map_err(|e| format!("Download failed: {}", e))?;
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
+    let total_size = response
+        .content_length()
+        .ok_or_else(|| "Failed to get content length".to_string())?;
 
-    fs::write(&dest_path, &bytes)
-        .map_err(|e| format!("Failed to save model: {}", e))?;
+    let tmp_path = dest_path.with_extension("download");
+    if tmp_path.exists() {
+        let _ = fs::remove_file(&tmp_path);
+    }
 
-    Ok(format!("Downloaded {} ({} MB)", model.name, bytes.len() / 1_000_000))
+    let mut file = std::fs::File::create(&tmp_path)
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+
+    let mut downloaded: u64 = 0;
+    let mut last_emit = std::time::Instant::now();
+    let mut stream = response.bytes_stream();
+
+    while let Some(item) = stream.next().await {
+        let chunk = item.map_err(|e| {
+            let _ = fs::remove_file(&tmp_path);
+            format!("Error while downloading: {}", e)
+        })?;
+
+        file.write_all(&chunk).map_err(|e| {
+            let _ = fs::remove_file(&tmp_path);
+            format!("Failed to write chunk: {}", e)
+        })?;
+
+        downloaded += chunk.len() as u64;
+        let percent = (downloaded * 100 / total_size) as u32;
+
+        if last_emit.elapsed().as_millis() > 100 || percent == 100 {
+            app.emit(
+                "download-progress",
+                serde_json::json!({
+                    "id": model.id,
+                    "progress": percent,
+                }),
+            )
+            .ok();
+            last_emit = std::time::Instant::now();
+        }
+    }
+
+    file.sync_all().map_err(|e| {
+        let _ = fs::remove_file(&tmp_path);
+        format!("Failed to sync file: {}", e)
+    })?;
+    drop(file);
+
+    if let Err(e) = fs::rename(&tmp_path, &dest_path) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(format!("Failed to save final model file: {}", e));
+    }
+
+    Ok(format!("Downloaded {} ({} MB)", model.name, downloaded / 1_000_000))
 }
 
 pub fn run_inference(
@@ -217,7 +303,7 @@ pub fn run_inference(
     // Create a temporary prompt file to prevent command line length issues
     let mut temp_dir = std::env::temp_dir();
     let file_id = uuid::Uuid::new_v4().to_string();
-    temp_dir.push(format!("flowlocal_prompt_{}.txt", file_id));
+    temp_dir.push(format!("localflow_prompt_{}.txt", file_id));
 
     let active_model_lower = active_model.to_lowercase();
     let (formatted_prompt, stop_token) = if active_model_lower.contains("llama") {

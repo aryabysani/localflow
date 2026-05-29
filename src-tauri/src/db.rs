@@ -1,4 +1,4 @@
-/// db.rs — SQLite persistence for FlowLocal
+/// db.rs — SQLite persistence for LocalFlow
 /// Tables: dictation_history, dictionary, settings, style_memory
 use rusqlite::{Connection, Result as SqlResult, params};
 use serde::{Deserialize, Serialize};
@@ -62,7 +62,7 @@ pub fn get_db_path(app: &AppHandle) -> Result<PathBuf, String> {
         .app_data_dir()
         .map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
-    path.push("flowlocal.db");
+    path.push("localflow.db");
     Ok(path)
 }
 
@@ -204,14 +204,17 @@ pub fn save_dictation(
         |row| row.get(0),
     ).unwrap_or_else(|_| "true".to_string());
 
-    if privacy_mode || save_history == "false" {
-        return Ok(-1); // Don't persist in privacy mode or when history saving is disabled
+    if privacy_mode {
+        return Ok(-1); // Don't persist in privacy mode
     }
+
+    let final_raw = if save_history == "false" { String::new() } else { raw_text };
+    let final_cleaned = if save_history == "false" { String::new() } else { cleaned_text };
 
     conn.execute(
         "INSERT INTO dictation_history (app_name, app_exe, raw_text, cleaned_text, word_count, duration_secs, language)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![app_name, app_exe, raw_text, cleaned_text, word_count, duration_secs, language],
+        params![app_name, app_exe, final_raw, final_cleaned, word_count, duration_secs, language],
     ).map_err(|e| e.to_string())?;
 
     let id = conn.last_insert_rowid();
@@ -219,20 +222,22 @@ pub fn save_dictation(
     // Update FTS index
     conn.execute(
         "INSERT INTO dictation_fts(rowid, cleaned_text) VALUES (?1, ?2)",
-        params![id, cleaned_text],
+        params![id, final_cleaned],
     ).ok();
 
-    // Also add to style memory
-    conn.execute(
-        "INSERT INTO style_memory (cleaned_text, app_exe) VALUES (?1, ?2)",
-        params![cleaned_text, app_exe],
-    ).ok();
+    if !final_cleaned.is_empty() {
+        // Also add to style memory
+        conn.execute(
+            "INSERT INTO style_memory (cleaned_text, app_exe) VALUES (?1, ?2)",
+            params![final_cleaned, app_exe],
+        ).ok();
 
-    // Keep style memory to last 50 entries
-    conn.execute(
-        "DELETE FROM style_memory WHERE id NOT IN (SELECT id FROM style_memory ORDER BY id DESC LIMIT 50)",
-        [],
-    ).ok();
+        // Keep style memory to last 50 entries
+        conn.execute(
+            "DELETE FROM style_memory WHERE id NOT IN (SELECT id FROM style_memory ORDER BY id DESC LIMIT 50)",
+            [],
+        ).ok();
+    }
 
     Ok(id)
 }

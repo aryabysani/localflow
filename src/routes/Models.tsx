@@ -1,41 +1,42 @@
 import { useEffect, useState } from "react";
-import { CheckCircle, Cpu, Download, HardDrive, Gauge, Zap } from "lucide-react";
-import { downloadModel, listModels, ModelInfo, setActiveModel } from "../lib/ipc";
+import { CheckCircle, Download, Trash2 } from "lucide-react";
+import { downloadModel, listModels, ModelInfo, setActiveModel, deleteModel } from "../lib/ipc";
+import { listen } from "@tauri-apps/api/event";
 
 const MODEL_COMPARISONS: Record<string, {
+  accuracy: string;
   speed: string;
-  cpu: string;
-  ramDiff: string;
+  avgRam: string;
 }> = {
   "tiny.en": {
-    speed: "Fastest (Baseline: ~0.15s)",
-    cpu: "Ultra-light (1-2 threads)",
-    ramDiff: "Baseline (~128MB)"
+    accuracy: "Tier 1 (Lowest)",
+    speed: "1x speed (Baseline)",
+    avgRam: "~128 MB (Average)"
   },
   "base.en": {
-    speed: "1.5x slower than Tiny (~0.25s)",
-    cpu: "Light (2 threads)",
-    ramDiff: "+72MB RAM from Tiny"
+    accuracy: "Tier 2 (Low)",
+    speed: "1.7x slower",
+    avgRam: "~200 MB (Average)"
   },
   "small.en": {
-    speed: "3x slower than Base (~0.8s)",
-    cpu: "Moderate (4 threads)",
-    ramDiff: "+300MB RAM from Base"
+    accuracy: "Tier 3 (Good)",
+    speed: "5x slower",
+    avgRam: "~500 MB (Average)"
   },
   "medium.en": {
-    speed: "4x slower than Small (~3.2s)",
-    cpu: "Heavy spikes (uses all threads)",
-    ramDiff: "+700MB RAM from Small"
-  },
-  "large-v3-turbo": {
-    speed: "1.5x slower than Medium (~4.8s)",
-    cpu: "Full CPU load (max threads)",
-    ramDiff: "+600MB RAM from Medium"
+    accuracy: "Tier 4 (High)",
+    speed: "21x slower",
+    avgRam: "~1.2 GB (Average)"
   },
   "distil-large-v3": {
-    speed: "2.5x faster than Large Turbo (~1.8s)",
-    cpu: "High spikes, short burst",
-    ramDiff: "-800MB RAM from Large Turbo"
+    accuracy: "Tier 5 (Very High)",
+    speed: "12x slower",
+    avgRam: "~1.0 GB (Average)"
+  },
+  "large-v3-turbo": {
+    accuracy: "Tier 6 (Highest)",
+    speed: "32x slower",
+    avgRam: "~1.8 GB (Average)"
   }
 };
 
@@ -44,11 +45,33 @@ export default function ModelsPage() {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [activeModel, setActiveModelState] = useState("ggml-small.en-q5_1.bin");
   const [downloadStatus, setDownloadStatus] = useState<Record<string, string>>({});
+  const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
 
-  const load = async () => setModels(await listModels());
+  const load = async () => {
+    const list = await listModels();
+    setModels(list);
+    const active = list.find((m) => m.is_active);
+    if (active) {
+      setActiveModelState(active.filename);
+    }
+  };
 
   useEffect(() => {
     load().catch(console.error);
+
+    const unlisten = listen<{ id: string; progress: number }>(
+      "download-progress",
+      (event) => {
+        setDownloadProgress((prev) => ({
+          ...prev,
+          [event.payload.id]: event.payload.progress,
+        }));
+      }
+    );
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, []);
 
   const handleDownload = async (model: ModelInfo) => {
@@ -70,6 +93,17 @@ export default function ModelsPage() {
     setActiveModelState(filename);
   };
 
+  const handleDelete = async (model: ModelInfo) => {
+    if (confirm(`Are you sure you want to delete ${model.name}?`)) {
+      try {
+        await deleteModel(model.id);
+        await load();
+      } catch (e) {
+        alert(`Failed to delete model: ${e}`);
+      }
+    }
+  };
+
   const formatSize = (mb: number) => (mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${mb} MB`);
 
   return (
@@ -77,7 +111,7 @@ export default function ModelsPage() {
       <div className="page-header">
         <div>
           <p className="page-kicker">Whisper models</p>
-          <h2 className="page-title">Models</h2>
+          <h2 className="page-title">Local LLM</h2>
         </div>
       </div>
 
@@ -91,7 +125,10 @@ export default function ModelsPage() {
         {models.map((model) => {
           const isActive = activeModel === model.filename;
           const isDownloading = downloading === model.id;
-          const status = downloadStatus[model.id];
+          const progress = downloadProgress[model.id];
+          const status = isDownloading && progress !== undefined
+            ? `Downloading... (${progress}%)`
+            : downloadStatus[model.id];
 
           return (
             <article key={model.id} className="glass-panel model-card">
@@ -105,42 +142,57 @@ export default function ModelsPage() {
                   {isActive && <span className="badge">Active</span>}
                 </div>
                 <p className="row-desc" style={{ margin: 0 }}>{model.description}</p>
-                <div className="model-meta">
-                  <span className="row-desc">
-                    <HardDrive size={13} />
-                    {formatSize(model.size_mb)}
-                  </span>
-                  <span className="row-desc">
-                    <Cpu size={13} />
-                    ~{formatSize(model.ram_mb)} RAM
-                  </span>
-                  {MODEL_COMPARISONS[model.id] && (
-                    <>
-                      <span className="row-desc" title="Relative speed comparison" style={{ color: "var(--accent)" }}>
-                        <Gauge size={13} />
-                        {MODEL_COMPARISONS[model.id].speed}
-                      </span>
-                      <span className="row-desc" title="RAM differential compared to previous model" style={{ color: "var(--warning)" }}>
-                        <Zap size={13} />
-                        {MODEL_COMPARISONS[model.id].ramDiff}
-                      </span>
-                    </>
-                  )}
-                  {status && <span className="row-desc">{status}</span>}
+                
+                <div className="model-specs-grid">
+                  <div className="spec-item">
+                    <span className="spec-label">Accuracy</span>
+                    <span className="spec-value">{MODEL_COMPARISONS[model.id]?.accuracy || "N/A"}</span>
+                  </div>
+                  <div className="spec-item">
+                    <span className="spec-label">File Size</span>
+                    <span className="spec-value">{formatSize(model.size_mb)}</span>
+                  </div>
+                  <div className="spec-item">
+                    <span className="spec-label">Average RAM</span>
+                    <span className="spec-value">{MODEL_COMPARISONS[model.id]?.avgRam || `~${formatSize(model.ram_mb)} (Average)`}</span>
+                  </div>
+                  <div className="spec-item">
+                    <span className="spec-label">Speed</span>
+                    <span className="spec-value highlight">{MODEL_COMPARISONS[model.id]?.speed || "N/A"}</span>
+                  </div>
                 </div>
+
+                {status && (
+                  <div style={{ marginTop: 8 }}>
+                    <span className="row-desc" style={{ color: "var(--accent)" }}>{status}</span>
+                  </div>
+                )}
               </div>
 
-              <div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 {model.downloaded ? (
-                  !isActive && (
-                    <button className="button" onClick={() => handleSetActive(model.filename)}>
-                      Set active
+                  <>
+                    {!isActive && (
+                      <button className="button" onClick={() => handleSetActive(model.filename)}>
+                        Set active
+                      </button>
+                    )}
+                    <button
+                      className="button danger icon"
+                      onClick={() => handleDelete(model)}
+                      disabled={isActive}
+                      title={isActive ? "Cannot delete the active model" : `Delete ${model.name}`}
+                      style={{ border: "1px solid var(--separator-soft)" }}
+                    >
+                      <Trash2 size={14} />
                     </button>
-                  )
+                  </>
                 ) : (
                   <button className="button primary" disabled={isDownloading || !!downloading} onClick={() => handleDownload(model)}>
                     <Download size={14} />
-                    {isDownloading ? "Downloading" : `Download ${formatSize(model.size_mb)}`}
+                    {isDownloading
+                      ? `Downloading ${progress !== undefined ? `(${progress}%)` : ""}`
+                      : `Download ${formatSize(model.size_mb)}`}
                   </button>
                 )}
               </div>

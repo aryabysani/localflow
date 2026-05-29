@@ -66,9 +66,63 @@ fn generate_wav_sweep(start_freq: f32, end_freq: f32, duration_ms: u32, sample_r
     wav
 }
 
+fn generate_ting_sound(sample_rate: u32) -> Vec<u8> {
+    let duration_ms = 150;
+    let num_samples = (sample_rate as f32 * (duration_ms as f32 / 1000.0)) as usize;
+    let mut data = Vec::with_capacity(num_samples * 2);
+    
+    for i in 0..num_samples {
+        let t = i as f32 / sample_rate as f32;
+        
+        // Two high frequencies mixed for a rich bell-like "ting"
+        let f1 = 1200.0;
+        let f2 = 1500.0;
+        
+        // Amplitude envelope: instant attack, exponential decay
+        let decay = (-18.0 * t).exp();
+        
+        let sample = 0.6 * (2.0 * std::f32::consts::PI * f1 * t).sin() + 
+                     0.4 * (2.0 * std::f32::consts::PI * f2 * t).sin();
+                     
+        let val = sample * decay;
+        
+        // 16-bit integer
+        let int_sample = (val * 14000.0) as i16;
+        data.extend_from_slice(&int_sample.to_le_bytes());
+    }
+    
+    // Create WAV header
+    let data_len = data.len() as u32;
+    let mut wav = Vec::with_capacity(44 + data.len());
+    
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+    wav.extend_from_slice(b"WAVE");
+    
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    wav.extend_from_slice(&1u16.to_le_bytes()); // Mono
+    wav.extend_from_slice(&sample_rate.to_le_bytes());
+    
+    let bits_per_sample = 16u16;
+    let byte_rate = sample_rate * 1 * (bits_per_sample as u32) / 8;
+    wav.extend_from_slice(&byte_rate.to_le_bytes());
+    
+    let block_align = 1 * bits_per_sample / 8;
+    wav.extend_from_slice(&block_align.to_le_bytes());
+    wav.extend_from_slice(&bits_per_sample.to_le_bytes());
+    
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+    wav.extend(data);
+    
+    wav
+}
+
 pub fn play_start_sound() {
     let wav = START_WAV.get_or_init(|| {
-        generate_wav_sweep(523.25, 659.25, 120, 22050)
+        generate_ting_sound(22050)
     });
     play_sound_bytes(wav);
 }

@@ -41,12 +41,12 @@ export default function ShortcutsPage() {
   const [keybindKeyboardName, setKeybindKeyboardName] = useState("Ctrl+Q");
   const [keybindKeyboardMode, setKeybindKeyboardMode] = useState("hold");
   const [showBanner, setShowBanner] = useState(() => {
-    return localStorage.getItem("flowlocal_shortcuts_banner_closed") !== "true";
+    return localStorage.getItem("localflow_shortcuts_banner_closed") !== "true";
   });
 
   const handleCloseBanner = () => {
     setShowBanner(false);
-    localStorage.setItem("flowlocal_shortcuts_banner_closed", "true");
+    localStorage.setItem("localflow_shortcuts_banner_closed", "true");
   };
   
   const [keybindMouse, setKeybindMouse] = useState("middle");

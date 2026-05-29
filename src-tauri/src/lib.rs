@@ -43,7 +43,6 @@ pub fn run() {
                     audio_state.clone(),
                     pipeline_state.clone(),
                 );
-
                 // Show the bubble window on startup
                 show_bubble_window(app.handle());
 
@@ -67,11 +66,11 @@ pub fn run() {
                 let pipeline_tray = pipeline_state.clone();
 
                 let open_item =
-                    MenuItem::with_id(app, "open", "Open FlowLocal", true, None::<&str>)?;
+                    MenuItem::with_id(app, "open", "Open LocalFlow", true, None::<&str>)?;
                 let privacy_item =
                     MenuItem::with_id(app, "privacy", "Privacy Mode: OFF", true, None::<&str>)?;
                 let quit_item =
-                    MenuItem::with_id(app, "quit", "Quit FlowLocal", true, None::<&str>)?;
+                    MenuItem::with_id(app, "quit", "Quit LocalFlow", true, None::<&str>)?;
 
                 let menu = Menu::with_items(app, &[&open_item, &privacy_item, &quit_item])?;
 
@@ -110,7 +109,7 @@ pub fn run() {
                     })
                     .build(app)?;
 
-                println!("FlowLocal initialized.");
+                println!("LocalFlow initialized.");
                 Ok(())
             }
         })
@@ -128,6 +127,7 @@ pub fn run() {
             whisper::download_model,
             whisper::transcribe_audio,
             whisper::set_active_model,
+            whisper::delete_model,
             // Database
             db::save_dictation,
             db::get_history,
@@ -168,9 +168,8 @@ pub fn run() {
             reload_global_shortcut,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running FlowLocal");
+        .expect("error while running LocalFlow");
 }
-
 /// Position and show the compact bubble window at the bottom right of the active monitor.
 pub fn show_bubble_window(app: &tauri::AppHandle) {
     if let Some(b) = app.get_webview_window("bubble") {
@@ -179,14 +178,15 @@ pub fn show_bubble_window(app: &tauri::AppHandle) {
             let monitor_pos = monitor.position();
             let scale_factor = monitor.scale_factor();
             
-            // Idle pill size: 56 × 36 logical pixels
-            let bubble_width = (56.0 * scale_factor) as i32;
-            let bubble_height = (36.0 * scale_factor) as i32;
+            // Size: 240 × 100 logical pixels (static transparent canvas)
+            let bubble_width = (240.0 * scale_factor) as i32;
+            let bubble_height = (100.0 * scale_factor) as i32;
             
-            // ~1 cm margin from the bottom-right corner
-            let margin = (40.0 * scale_factor) as i32;
-            let x = monitor_pos.x + monitor_size.width as i32 - bubble_width - margin;
-            let y = monitor_pos.y + monitor_size.height as i32 - bubble_height - margin;
+            // Margins from the bottom-right corner: 28px x-axis, 72px y-axis (1cm higher)
+            let margin_x = (28.0 * scale_factor) as i32;
+            let margin_y = (72.0 * scale_factor) as i32;
+            let x = monitor_pos.x + monitor_size.width as i32 - bubble_width - margin_x;
+            let y = monitor_pos.y + monitor_size.height as i32 - bubble_height - margin_y;
             
             let _ = b.set_size(tauri::Size::Physical(tauri::PhysicalSize {
                 width: bubble_width as u32,
@@ -372,24 +372,28 @@ pub async fn run_pipeline(
                 |row| row.get(0),
             ).unwrap_or_else(|_| "true".to_string());
 
-            if save_history == "true" {
-                let track_apps: String = conn.query_row(
-                    "SELECT value FROM settings WHERE key = 'track_apps'",
-                    [],
-                    |row| row.get(0),
-                ).unwrap_or_else(|_| "true".to_string());
+            let track_apps: String = conn.query_row(
+                "SELECT value FROM settings WHERE key = 'track_apps'",
+                [],
+                |row| row.get(0),
+            ).unwrap_or_else(|_| "true".to_string());
 
-                let (final_app_name, final_app_exe) = if track_apps == "false" {
-                    ("".to_string(), "".to_string())
-                } else {
-                    (app_name.clone(), app_exe.clone())
-                };
+            let (final_app_name, final_app_exe) = if track_apps == "false" {
+                ("".to_string(), "".to_string())
+            } else {
+                (app_name.clone(), app_exe.clone())
+            };
 
-                let _ = conn.execute(
-                    "INSERT INTO dictation_history (app_name, app_exe, raw_text, cleaned_text, word_count, duration_secs, language) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                    rusqlite::params![final_app_name, final_app_exe, raw, text_to_inject, word_count, duration_secs, language],
-                );
-            }
+            let (final_raw, final_cleaned) = if save_history == "false" {
+                (String::new(), String::new())
+            } else {
+                (raw.clone(), text_to_inject.clone())
+            };
+
+            let _ = conn.execute(
+                "INSERT INTO dictation_history (app_name, app_exe, raw_text, cleaned_text, word_count, duration_secs, language) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![final_app_name, final_app_exe, final_raw, final_cleaned, word_count, duration_secs, language],
+            );
         }
     }
 
@@ -425,6 +429,7 @@ async fn start_recording_cmd(
     let device = audio.device_name.lock().unwrap().clone();
     let dev_opt = if device.is_empty() { None } else { Some(device) };
     audio::start_capture_internal(audio.inner(), dev_opt)?;
+    crate::earcon::play_start_sound();
     app.emit("recording-started", ()).ok();
     show_bubble_window(&app);
     Ok(())
@@ -438,6 +443,10 @@ async fn stop_and_transcribe_cmd(
     _db: tauri::State<'_, DbState>,
     app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
+    if !*audio.is_recording.lock().unwrap() {
+        return Ok(serde_json::json!({"status": "not_recording"}));
+    }
+    crate::earcon::play_stop_sound();
     audio::stop_capture_internal(audio.inner());
 
     let audio_arc = audio.inner().clone();
@@ -672,6 +681,7 @@ pub fn register_global_toggle_shortcut(app: &tauri::AppHandle) -> Result<(), Str
             let ah = app.clone();
             let audio_h = audio.inner().clone();
             let pipeline_h = pipeline.inner().clone();
+            crate::earcon::play_stop_sound();
             tauri::async_runtime::spawn(async move {
                 crate::audio::stop_capture_internal(&audio_h);
                 crate::run_pipeline(&ah, &audio_h, &pipeline_h).await;
@@ -683,6 +693,7 @@ pub fn register_global_toggle_shortcut(app: &tauri::AppHandle) -> Result<(), Str
                 eprintln!("Global Shortcut: failed to start recording: {}", e);
                 return;
             }
+            crate::earcon::play_start_sound();
             app.emit("recording-started", ()).ok();
             crate::show_bubble_window(app);
         }

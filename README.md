@@ -1,8 +1,8 @@
-# FlowLocal 🎙️
+# LocalFlow 🎙️
 
 **100% local voice-to-text for Windows 11. No cloud. No API keys. No subscriptions.**
 
-FlowLocal is a privacy-first desktop dictation app that mirrors the Wispr Flow experience end-to-end — press a hotkey anywhere in Windows, speak naturally, and get clean, punctuated text injected directly at your cursor. Everything runs on your machine using open-source AI models.
+LocalFlow is a privacy-first desktop dictation app that mirrors the Wispr Flow experience end-to-end — press a hotkey anywhere in Windows, speak naturally, and get clean, punctuated text injected directly at your cursor. Everything runs on your machine using open-source AI models.
 
 ---
 
@@ -18,7 +18,7 @@ FlowLocal is a privacy-first desktop dictation app that mirrors the Wispr Flow e
 
 ## Why Local?
 
-| Feature | FlowLocal | Cloud STT |
+| Feature | LocalFlow | Cloud STT |
 |---|---|---|
 | Audio leaves your device | ❌ Never | ✅ Always |
 | Works offline | ✅ Yes | ❌ No |
@@ -48,7 +48,7 @@ Your voice stays on your machine. Period.
 
 ## Installation
 
-1. Download `flowlocal-setup.msi` from [Releases](https://github.com/your-repo/flowlocal/releases)
+1. Download `localflow-setup.msi` from [Releases](https://github.com/your-repo/localflow/releases)
 2. Run the installer
 3. On first launch, the setup wizard will:
    - Ask you to choose a microphone
@@ -83,8 +83,8 @@ pnpm --version    # >= 8
 ### Build
 
 ```powershell
-git clone https://github.com/your-repo/flowlocal
-cd flowlocal
+git clone https://github.com/your-repo/localflow
+cd localflow
 
 # Install frontend dependencies
 pnpm install
@@ -93,7 +93,7 @@ pnpm install
 pnpm tauri build
 
 # The installer will be at:
-# src-tauri/target/release/bundle/msi/FlowLocal_0.1.0_x64_en-US.msi
+# src-tauri/target/release/bundle/msi/LocalFlow_0.1.0_x64_en-US.msi
 ```
 
 ### Development
@@ -109,7 +109,7 @@ pnpm tauri dev
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                     FlowLocal (Tauri 2)                      │
+│                     LocalFlow (Tauri 2)                      │
 │                                                              │
 │  ┌─────────────────────┐    ┌──────────────────────────────┐ │
 │  │   React Frontend    │    │      Rust Backend            │ │
@@ -146,7 +146,7 @@ STT Hot Path:
 
 ## Differences from Wispr Flow
 
-| Feature | FlowLocal | Wispr Flow |
+| Feature | LocalFlow | Wispr Flow |
 |---|---|---|
 | Processing | 100% local | Cloud (OpenAI Whisper) |
 | Price | Free, open source | $10/month |
@@ -192,7 +192,7 @@ STT Hot Path:
 - Model downloads from HuggingFace (on-demand, user-initiated)
 - Optional update check against GitHub Releases API (disabled by default)
 
-FlowLocal never sends audio, transcripts, or usage data anywhere. See `src-tauri/src/lib.rs` — there are no outbound network calls in the hot path.
+LocalFlow never sends audio, transcripts, or usage data anywhere. See `src-tauri/src/lib.rs` — there are no outbound network calls in the hot path.
 
 ---
 

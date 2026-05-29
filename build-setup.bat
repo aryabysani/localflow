@@ -1,10 +1,10 @@
 @echo off
-REM FlowLocal Build Setup Script
+REM LocalFlow Build Setup Script
 REM Run this AFTER installing LLVM from https://github.com/llvm/llvm-project/releases
 REM Make sure to select "Add LLVM to PATH" during LLVM installation
 
 echo ========================================
-echo FlowLocal Build Setup
+echo LocalFlow Build Setup
 echo ========================================
 
 REM Check for LLVM
@@ -46,7 +46,7 @@ pnpm --version
 
 echo.
 echo ========================================
-echo Building FlowLocal...
+echo Building LocalFlow...
 echo ========================================
 
 REM Install frontend deps

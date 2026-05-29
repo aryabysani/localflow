@@ -10,6 +10,7 @@ import {
   LlmModelInfo,
 } from "../lib/ipc";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export default function LLMSettingsPage() {
   const [enabled, setEnabled] = useState(false);
@@ -18,18 +19,19 @@ export default function LLMSettingsPage() {
   const [activeModel, setActiveModel] = useState("Llama-3.2-1B-Instruct-Q4_K_M.gguf");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [showBanner, setShowBanner] = useState(() => {
-    return localStorage.getItem("flowlocal_llm_banner_closed") !== "true";
+    return localStorage.getItem("localflow_llm_banner_closed") !== "true";
   });
 
   const handleCloseBanner = () => {
     setShowBanner(false);
-    localStorage.setItem("flowlocal_llm_banner_closed", "true");
+    localStorage.setItem("localflow_llm_banner_closed", "true");
   };
   
   // Action states
   const [downloadingCli, setDownloadingCli] = useState(false);
   const [downloadingModel, setDownloadingModel] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
+  const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
   
   // Test states
   const [testInput, setTestInput] = useState(
@@ -49,8 +51,13 @@ export default function LLMSettingsPage() {
       const dbEnabled = await getSetting("llm_enabled");
       setEnabled(dbEnabled === "true");
 
-      const dbActive = await getSetting("llm_active_model");
-      if (dbActive) setActiveModel(dbActive);
+      const active = list.find((m) => m.is_active);
+      if (active) {
+        setActiveModel(active.filename);
+      } else {
+        const dbActive = await getSetting("llm_active_model");
+        if (dbActive) setActiveModel(dbActive);
+      }
 
       const dbPrompt = await getSetting("llm_system_prompt");
       if (dbPrompt) setSystemPrompt(dbPrompt);
@@ -61,6 +68,20 @@ export default function LLMSettingsPage() {
 
   useEffect(() => {
     loadData().catch(console.error);
+
+    const unlisten = listen<{ id: string; progress: number }>(
+      "download-progress",
+      (event) => {
+        setDownloadProgress((prev) => ({
+          ...prev,
+          [event.payload.id]: event.payload.progress,
+        }));
+      }
+    );
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, []);
 
   const handleToggle = async () => {
@@ -129,7 +150,68 @@ export default function LLMSettingsPage() {
   const formatSize = (mb: number) => (mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${mb} MB`);
 
   return (
-    <div className="page">
+    <div className="page" style={{ position: "relative", minHeight: "calc(100vh - 100px)" }}>
+      {/* Coming Soon Overlay */}
+      <div style={{
+        position: "absolute",
+        inset: 0,
+        backgroundColor: "rgba(15, 15, 17, 0.42)",
+        backdropFilter: "blur(12px) saturate(180%)",
+        WebkitBackdropFilter: "blur(12px) saturate(180%)",
+        zIndex: 10,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: "var(--radius-panel)",
+        padding: 40,
+        textAlign: "center"
+      }}>
+        <div style={{
+          background: "var(--panel)",
+          border: "1px solid var(--separator-soft)",
+          borderRadius: 24,
+          padding: "36px 40px",
+          boxShadow: "var(--shadow-panel)",
+          maxWidth: 440,
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+        }}>
+          <span style={{
+            fontSize: "11px",
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "2px",
+            color: "var(--accent)",
+            display: "block",
+            marginBottom: 12
+          }}>
+            Feature Preview
+          </span>
+          <h2 style={{
+            margin: 0,
+            fontSize: "28px",
+            fontWeight: 600,
+            letterSpacing: "-0.5px",
+            color: "var(--label)"
+          }}>
+            Formatting Options
+          </h2>
+          <p style={{
+            color: "var(--secondary)",
+            fontSize: "13.5px",
+            lineHeight: 1.5,
+            marginTop: 10,
+            marginBottom: 20
+          }}>
+            Offline AI text post-processing, automatic spelling cleanup, tone adjustment, and smart dictation formatting are coming soon in a future release.
+          </p>
+          <span className="badge" style={{ fontSize: 11, padding: "4px 10px" }}>
+            Coming Soon
+          </span>
+        </div>
+      </div>
+
       {showBanner && (
         <div className="banner-card" style={{ backgroundImage: "url('/Local LLM Background.png')" }}>
           <button className="banner-close" onClick={handleCloseBanner} aria-label="Close banner">
@@ -152,7 +234,7 @@ export default function LLMSettingsPage() {
       <div className="page-header">
         <div>
           <p className="page-kicker">Offline AI Formatting</p>
-          <h2 className="page-title">Local LLM</h2>
+          <h2 className="page-title">Formatting options</h2>
         </div>
       </div>
 
@@ -206,7 +288,9 @@ export default function LLMSettingsPage() {
                 onClick={handleDownloadCli}
               >
                 <Download size={14} />
-                {downloadingCli ? "Downloading..." : "Download (15 MB)"}
+                {downloadingCli
+                  ? `Downloading ${downloadProgress["llama-cli"] !== undefined ? `(${downloadProgress["llama-cli"]}%)` : "..."}`
+                  : "Download (15 MB)"}
               </button>
             ) : (
               <span style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--success)", fontSize: 13, fontWeight: 500 }}>
@@ -258,7 +342,9 @@ export default function LLMSettingsPage() {
                     onClick={() => handleDownloadModel(model)}
                   >
                     <Download size={14} />
-                    {isDownloading ? "Downloading" : `Download ${formatSize(model.size_mb)}`}
+                    {isDownloading
+                      ? `Downloading ${downloadProgress[model.id] !== undefined ? `(${downloadProgress[model.id]}%)` : "..."}`
+                      : `Download ${formatSize(model.size_mb)}`}
                   </button>
                 )}
               </div>

@@ -153,7 +153,7 @@ pub fn cleanup_text(
 
         let prompt = build_cleanup_prompt(&raw_text, &app_exe, &system_prompt);
         match crate::llm::run_inference(&app, &prompt) {
-            Ok(result) => return Ok(result),
+            Ok(result) => return Ok(trim_surrounding_quotes(&result)),
             Err(e) => {
                 eprintln!("LLM Cleanup failed: {}. Falling back to regex.", e);
             }
@@ -161,7 +161,7 @@ pub fn cleanup_text(
     }
 
     let cleaned = regex_cleanup(&raw_text);
-    Ok(cleaned)
+    Ok(trim_surrounding_quotes(&cleaned))
 }
 
 /// Command mode: transform selected text with an instruction
@@ -209,7 +209,7 @@ Modified text:
         );
 
         match crate::llm::run_inference(&app, &prompt) {
-            Ok(result) => return Ok(result),
+            Ok(result) => return Ok(trim_surrounding_quotes(&result)),
             Err(e) => {
                 eprintln!("LLM Command mode transform failed: {}. Falling back to regex rules.", e);
             }
@@ -248,5 +248,15 @@ Modified text:
         regex_cleanup(&selected_text)
     };
 
-    Ok(result)
+    Ok(trim_surrounding_quotes(&result))
+}
+
+pub fn trim_surrounding_quotes(text: &str) -> String {
+    let trimmed = text.trim();
+    if (trimmed.starts_with('"') && trimmed.ends_with('"')) || (trimmed.starts_with('\'') && trimmed.ends_with('\'')) {
+        if trimmed.len() >= 2 {
+            return trimmed[1..trimmed.len() - 1].to_string();
+        }
+    }
+    trimmed.to_string()
 }

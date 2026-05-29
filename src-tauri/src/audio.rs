@@ -84,18 +84,30 @@ pub fn start_capture_internal(
                     .map(|frame| frame.iter().sum::<f32>() / channels as f32)
                     .collect();
 
-                // Compute amplitude bars (8 bars)
+                // Compute amplitude bars (8 bars) with dynamic scaling/normalization
                 let chunk_size = (mono_samples.len() / 8).max(1);
-                let mut bars: Vec<f32> = mono_samples
-                    .chunks(chunk_size)
-                    .take(8)
-                    .map(|chunk| {
-                        let rms = (chunk.iter().map(|s| s * s).sum::<f32>()
-                            / chunk.len() as f32)
-                            .sqrt();
-                        (rms * 8.0).min(1.0)
-                    })
+                let mut chunk_rmss = Vec::new();
+                for chunk in mono_samples.chunks(chunk_size).take(8) {
+                    let rms = (chunk.iter().map(|s| s * s).sum::<f32>()
+                        / chunk.len() as f32)
+                        .sqrt();
+                    chunk_rmss.push(rms);
+                }
+
+                let max_rms = chunk_rmss.iter().cloned().fold(0.0f32, f32::max);
+
+                // Auto-gain scaling: normalizes quiet vs loud environments
+                let scale = if max_rms < 0.002 {
+                    15.0 // Keep baseline signals small during silence
+                } else {
+                    0.8 / max_rms // Normalize peak signals to a high-end visible range
+                };
+
+                let mut bars: Vec<f32> = chunk_rmss
+                    .iter()
+                    .map(|&rms| (rms * scale).clamp(0.08, 1.0))
                     .collect();
+
                 while bars.len() < 8 {
                     bars.push(0.05);
                 }

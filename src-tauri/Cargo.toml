@@ -1,12 +1,12 @@
 [package]
-name = "flowlocal"
+name = "localflow"
 version = "0.1.0"
-description = "FlowLocal — 100% local voice-to-text for Windows"
-authors = ["FlowLocal"]
+description = "LocalFlow — 100% local voice-to-text for Windows"
+authors = ["LocalFlow"]
 edition = "2021"
 
 [lib]
-name = "flowlocal_lib"
+name = "localflow_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

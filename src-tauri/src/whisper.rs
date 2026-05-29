@@ -1,9 +1,11 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
+use std::io::Write;
+use tauri::{AppHandle, Manager, Emitter};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 use serde::{Deserialize, Serialize};
+use futures_util::StreamExt;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ModelInfo {
@@ -55,15 +57,6 @@ pub fn available_models() -> Vec<ModelInfo> {
             description: "Higher accuracy, slower. Good for important documents.".into(),
         },
         ModelInfo {
-            id: "large-v3-turbo".into(),
-            name: "Large V3 Turbo (Multilingual)".into(),
-            filename: "ggml-large-v3-turbo-q5_0.bin".into(),
-            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin".into(),
-            size_mb: 874,
-            ram_mb: 1800,
-            description: "Best multilingual + Hinglish support. Recommended for non-English.".into(),
-        },
-        ModelInfo {
             id: "distil-large-v3".into(),
             name: "Distil-Whisper Large V3".into(),
             filename: "ggml-distil-large-v3.bin".into(),
@@ -71,6 +64,15 @@ pub fn available_models() -> Vec<ModelInfo> {
             size_mb: 756,
             ram_mb: 1000,
             description: "Distilled Large V3. 2x faster than standard Large with near-identical English accuracy.".into(),
+        },
+        ModelInfo {
+            id: "large-v3-turbo".into(),
+            name: "Large V3 Turbo (Multilingual)".into(),
+            filename: "ggml-large-v3-turbo-q5_0.bin".into(),
+            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin".into(),
+            size_mb: 874,
+            ram_mb: 1800,
+            description: "Best multilingual + Hinglish support. Recommended for non-English.".into(),
         },
     ]
 }
@@ -85,18 +87,14 @@ pub fn get_models_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-pub fn get_active_model_path(app: &AppHandle) -> Result<PathBuf, String> {
-    // Read active model from settings, default to small.en
-    let models_dir = get_models_dir(app)?;
-    
-    // Try to read settings to get active model
-    let mut settings_path = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?;
+pub fn get_active_model_filename(app: &AppHandle) -> String {
+    let mut settings_path = match app.path().app_data_dir() {
+        Ok(p) => p,
+        Err(_) => return "ggml-small.en-q5_1.bin".to_string(),
+    };
     settings_path.push("settings.json");
     
-    let active_filename = if settings_path.exists() {
+    if settings_path.exists() {
         let content = fs::read_to_string(&settings_path).unwrap_or_default();
         let val: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
         val["active_model"]
@@ -105,8 +103,12 @@ pub fn get_active_model_path(app: &AppHandle) -> Result<PathBuf, String> {
             .to_string()
     } else {
         "ggml-small.en-q5_1.bin".to_string()
-    };
+    }
+}
 
+pub fn get_active_model_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let models_dir = get_models_dir(app)?;
+    let active_filename = get_active_model_filename(app);
     Ok(models_dir.join(active_filename))
 }
 
@@ -114,6 +116,7 @@ pub fn get_active_model_path(app: &AppHandle) -> Result<PathBuf, String> {
 pub fn list_models(app: AppHandle) -> Vec<serde_json::Value> {
     let models = available_models();
     let models_dir = get_models_dir(&app).unwrap_or_default();
+    let active_filename = get_active_model_filename(&app);
 
     models
         .iter()
@@ -135,6 +138,7 @@ pub fn list_models(app: AppHandle) -> Vec<serde_json::Value> {
                 "description": m.description,
                 "downloaded": downloaded,
                 "size_on_disk": size_on_disk,
+                "is_active": m.filename == active_filename,
             })
         })
         .collect()
@@ -165,16 +169,62 @@ pub async fn download_model(
         .await
         .map_err(|e| format!("Download failed: {}", e))?;
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
+    let total_size = response
+        .content_length()
+        .ok_or_else(|| "Failed to get content length".to_string())?;
 
-    fs::write(&dest_path, &bytes)
-        .map_err(|e| format!("Failed to save model: {}", e))?;
+    let tmp_path = dest_path.with_extension("download");
+    if tmp_path.exists() {
+        let _ = fs::remove_file(&tmp_path);
+    }
+
+    let mut file = std::fs::File::create(&tmp_path)
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+
+    let mut downloaded: u64 = 0;
+    let mut last_emit = std::time::Instant::now();
+    let mut stream = response.bytes_stream();
+
+    while let Some(item) = stream.next().await {
+        let chunk = item.map_err(|e| {
+            let _ = fs::remove_file(&tmp_path);
+            format!("Error while downloading: {}", e)
+        })?;
+
+        file.write_all(&chunk).map_err(|e| {
+            let _ = fs::remove_file(&tmp_path);
+            format!("Failed to write chunk: {}", e)
+        })?;
+
+        downloaded += chunk.len() as u64;
+        let percent = (downloaded * 100 / total_size) as u32;
+
+        if last_emit.elapsed().as_millis() > 100 || percent == 100 {
+            app.emit(
+                "download-progress",
+                serde_json::json!({
+                    "id": model.id,
+                    "progress": percent,
+                }),
+            )
+            .ok();
+            last_emit = std::time::Instant::now();
+        }
+    }
+
+    file.sync_all().map_err(|e| {
+        let _ = fs::remove_file(&tmp_path);
+        format!("Failed to sync file: {}", e)
+    })?;
+    drop(file);
+
+    if let Err(e) = fs::rename(&tmp_path, &dest_path) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(format!("Failed to save final model file: {}", e));
+    }
 
     println!("Model saved to {:?}", dest_path);
-    Ok(format!("Downloaded {} ({} MB)", model.name, bytes.len() / 1_000_000))
+    Ok(format!("Downloaded {} ({} MB)", model.name, downloaded / 1_000_000))
 }
 
 #[tauri::command]
@@ -275,6 +325,42 @@ pub fn set_active_model(app: AppHandle, filename: String) -> Result<(), String> 
     settings["active_model"] = serde_json::json!(filename);
     fs::write(&settings_path, serde_json::to_string_pretty(&settings).unwrap())
         .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_model(app: AppHandle, model_id: String) -> Result<(), String> {
+    let models = available_models();
+    let model = models
+        .iter()
+        .find(|m| m.id == model_id)
+        .ok_or_else(|| format!("Unknown model: {}", model_id))?;
+
+    let models_dir = get_models_dir(&app)?;
+    let dest_path = models_dir.join(&model.filename);
+
+    if dest_path.exists() {
+        fs::remove_file(&dest_path).map_err(|e| format!("Failed to delete model file: {}", e))?;
+    }
+
+    // Reset active model settings if the deleted model was active
+    let mut settings_path = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?;
+    settings_path.push("settings.json");
+
+    if settings_path.exists() {
+        let content = fs::read_to_string(&settings_path).unwrap_or_default();
+        let mut val: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+        if let Some(active) = val["active_model"].as_str() {
+            if active == model.filename {
+                val["active_model"] = serde_json::json!("ggml-small.en-q5_1.bin");
+                let _ = fs::write(&settings_path, serde_json::to_string_pretty(&val).unwrap());
+            }
+        }
+    }
 
     Ok(())
 }

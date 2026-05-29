@@ -1,4 +1,5 @@
-import { Cpu, ExternalLink, Lock, Mic, Zap } from "lucide-react";
+import { Cpu, ExternalLink, Lock, Zap } from "lucide-react";
+import logoWhite from "../assets/brand/logo_white.png";
 
 const DEPS = [
   { name: "whisper.cpp", license: "MIT", url: "https://github.com/ggml-org/whisper.cpp" },
@@ -24,17 +25,37 @@ export default function AboutPage() {
       <section className="glass-panel about-hero">
         <div className="about-lockup">
           <div className="brand-icon about-icon">
-            <Mic size={24} />
+            <img src={logoWhite} alt="LocalFlow" style={{ width: 40, height: 40, objectFit: "contain" }} />
           </div>
           <div>
-            <h2 className="page-title" style={{ fontSize: 26, lineHeight: "32px" }}>FlowLocal</h2>
+            <h2 className="page-title" style={{ fontSize: 26, lineHeight: "32px" }}>LocalFlow</h2>
             <p className="page-kicker">Version 0.1.0 · local voice to text</p>
           </div>
         </div>
         <p className="about-copy">
-          FlowLocal is a privacy-first desktop dictation app for Windows. Speak naturally, clean the transcript locally,
+          LocalFlow is a privacy-first desktop dictation app for Windows. Speak naturally, clean the transcript locally,
           and paste the result into the app you are already using.
         </p>
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--separator-soft)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span className="row-desc" style={{ margin: 0 }}>Designed and engineered locally.</span>
+          <a
+            href="https://Aryab.in"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontSize: "12px",
+              textDecoration: "none",
+              color: "var(--accent)",
+              fontWeight: 500,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4
+            }}
+          >
+            built by <strong>AryaBysani</strong>
+            <ExternalLink size={12} />
+          </a>
+        </div>
       </section>
 
       <section className="grid cols-3" style={{ marginBottom: 16 }}>
@@ -55,7 +76,7 @@ export default function AboutPage() {
         {NOTES.map((note) => (
           <div key={note} className="setting-row">
             <span className="row-title">{note}</span>
-            <span className="badge">FlowLocal</span>
+            <span className="badge">LocalFlow</span>
           </div>
         ))}
       </section>

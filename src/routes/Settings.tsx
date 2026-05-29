@@ -236,7 +236,7 @@ export default function SettingsPage() {
       <section className="glass-panel mac-callout">
         <Shield size={16} color="var(--success)" />
         <p className="row-desc" style={{ margin: 0 }}>
-          FlowLocal has no telemetry or analytics. Audio and transcripts stay on this machine.
+          LocalFlow has no telemetry or analytics. Audio and transcripts stay on this machine.
         </p>
       </section>
     </div>

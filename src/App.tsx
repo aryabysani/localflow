@@ -6,13 +6,14 @@ import {
   Info,
   Keyboard,
   LayoutDashboard,
-  Mic,
   Settings,
   Shield,
   Sparkles,
 } from "lucide-react";
 import { useEffect } from "react";
 import { useAppStore } from "./lib/store";
+
+import logoWhite from "./assets/brand/logo_white.png";
 
 import AboutPage from "./routes/About";
 import Dashboard from "./routes/Dashboard";
@@ -28,8 +29,8 @@ const navItems = [
   { to: "/history", icon: History, label: "History" },
   { to: "/dictionary", icon: BookOpen, label: "Dictionary" },
   { to: "/shortcuts", icon: Keyboard, label: "Shortcuts" },
-  { to: "/models", icon: Download, label: "Models" },
-  { to: "/llm", icon: Sparkles, label: "Local LLM" },
+  { to: "/models", icon: Download, label: "Local LLM" },
+  { to: "/llm", icon: Sparkles, label: "Formatting options" },
   { to: "/settings", icon: Settings, label: "Settings" },
   { to: "/about", icon: Info, label: "About" },
 ];
@@ -38,8 +39,8 @@ function titleForPath(pathname: string) {
   if (pathname.startsWith("/history")) return ["History", "Recent dictations and transcripts"];
   if (pathname.startsWith("/dictionary")) return ["Dictionary", "Vocabulary hints for Whisper"];
   if (pathname.startsWith("/shortcuts")) return ["Shortcuts", "Keyboard and mouse triggers"];
-  if (pathname.startsWith("/models")) return ["Models", "Local speech recognition models"];
-  if (pathname.startsWith("/llm")) return ["Local LLM", "Offline text formatting and cleanup"];
+  if (pathname.startsWith("/models")) return ["Local LLM", "Local speech recognition models"];
+  if (pathname.startsWith("/llm")) return ["Formatting options", "Offline text formatting and cleanup"];
   if (pathname.startsWith("/settings")) return ["Settings", "Preferences for local dictation"];
   if (pathname.startsWith("/about")) return ["About", "Privacy-first voice to text"];
   return ["Dashboard", "Voice productivity at a glance"];
@@ -68,10 +69,10 @@ export default function App() {
 
         <div className="brand-lockup">
           <div className="brand-icon">
-            <Mic size={16} strokeWidth={2.2} />
+            <img src={logoWhite} alt="LocalFlow" style={{ width: 22, height: 22, objectFit: "contain" }} />
           </div>
           <div className="brand-title">
-            <strong>FlowLocal</strong>
+            <strong>LocalFlow</strong>
             <span>On-device dictation</span>
           </div>
         </div>
@@ -121,7 +122,23 @@ export default function App() {
             <h1>{title}</h1>
             <p>{subtitle}</p>
           </div>
-          <div className="titlebar-actions">
+          <div className="titlebar-actions" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <a
+              href="https://Aryab.in"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontSize: "11px",
+                textDecoration: "none",
+                color: "var(--secondary)",
+                fontWeight: 500,
+                transition: "color 150ms ease"
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--accent)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--secondary)")}
+            >
+              built by&nbsp;<span style={{ fontWeight: 600 }}>AryaBysani</span>
+            </a>
             <span className="badge">Local only</span>
           </div>
         </header>
